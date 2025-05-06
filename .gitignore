@@ -1,0 +1,8 @@
+# Ignore Build SDK parts
+toolchain/bin
+toolchain/lib
+picolibc/include
+picolibc/lib
+
+# Ignore Example Program build folders
+examples/HelloWorld/build
