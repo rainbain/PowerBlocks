@@ -5,10 +5,11 @@ PHDRS {
     rodata PT_LOAD FLAGS(4);  /* R */
     data   PT_LOAD FLAGS(6);  /* R + W */
     bss    PT_LOAD FLAGS(6);  /* R + W */
+    
+    tls    PT_TLS;
 }
 
 SECTIONS {
-    /* Start layout at 0x80004000 */
     . = 0x80004000;
 
     /* Code segment */
@@ -25,6 +26,11 @@ SECTIONS {
         *(.rodata*)
     } :rodata
 
+    /* Read-only data Relocations. */
+    .data.rel.ro : ALIGN(32) {
+        *(.data.rel.ro*)
+    } :data
+
     /* Writable data */
     .data : ALIGN(32) {
         *(.data)
@@ -32,7 +38,21 @@ SECTIONS {
 
     /* BSS section — allocated in memory but not in file */
     .bss : ALIGN(32) {
+        __bss_start = .;
         *(.bss)
         *(COMMON)
+        __bss_end = .;
     } :bss
+
+    /* TLS section — thread safe storage */
+    .tls : ALIGN(32) {
+    __tls_start = .;
+    *(.tdata .tdata.* .tbss .tbss.*)
+    __tls_end = .;
+    } :data :tls
+
+    . = ALIGN(32);
+    __heap_start = .;
+    /* Reserve everything up to 0x817FE000 - 1 MB for stack */
+    __heap_end = 0x816FE000;
 }
