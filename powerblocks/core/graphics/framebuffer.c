@@ -157,7 +157,7 @@ void video_framebuffer_copy_rgba_into(framebuffer_t* framebuffer, const uint32_t
     }
 }
 
-void video_framebuffer_fill_rgba(framebuffer_t* framebuffer, uint32_t rgba, vec2i a, vec2i b) {
+void framebuffer_fill_rgba(framebuffer_t* framebuffer, uint32_t rgba, vec2i a, vec2i b) {
     // Extract fill color components from 0xRRGGBBAA
     uint8_t r_fill = (rgba >> 24) & 0xFF;
     uint8_t g_fill = (rgba >> 16) & 0xFF;

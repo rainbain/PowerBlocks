@@ -5,12 +5,14 @@ add_library(
 
     system/start.s
     system/system_asm.s
+    system/libcio.c
     system/system.c
 
     graphics/video.c
     graphics/framebuffer.c
 
     utils/fonts.c
+    utils/console.c
     utils/math/arith64.c
 )
 
