@@ -255,6 +255,7 @@ exceptions_vector_machine_check:
 .global exceptions_vector_dsi
 exceptions_vector_dsi:
     exceptions_context_save
+    bl exception_dsi
     exceptions_context_restore
 
 // 0x0400
@@ -262,6 +263,7 @@ exceptions_vector_dsi:
 .global exceptions_vector_isi
 exceptions_vector_isi:
     exceptions_context_save
+    bl exception_isi
     exceptions_context_restore
 
 // 0x0500
@@ -277,6 +279,7 @@ exceptions_vector_external:
 .global exceptions_vector_alignment
 exceptions_vector_alignment:
     exceptions_context_save
+    bl exception_alignment
     exceptions_context_restore
 
 // 0x0700
@@ -285,6 +288,7 @@ exceptions_vector_alignment:
 .global exceptions_vector_program
 exceptions_vector_program:
     exceptions_context_save
+    bl exception_program
     exceptions_context_restore
 
 // 0x0800
@@ -292,6 +296,7 @@ exceptions_vector_program:
 .global exceptions_vector_fpu_unavailable
 exceptions_vector_fpu_unavailable:
     exceptions_context_save
+    bl exception_fpu_unavailable
     exceptions_context_restore
 
 // 0x0900

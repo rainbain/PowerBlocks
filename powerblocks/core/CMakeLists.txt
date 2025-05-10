@@ -15,6 +15,7 @@ add_library(
 
     utils/fonts.c
     utils/console.c
+    utils/crash_handler.c
     utils/math/arith64.c
 )
 

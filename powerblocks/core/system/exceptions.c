@@ -12,6 +12,8 @@
 
 #include "exceptions.h"
 
+#include "utils/crash_handler.h"
+
 #include "system.h"
 
 #include <stdint.h>
@@ -50,14 +52,14 @@ void exception_install_branch(uint32_t address, uint32_t handler) {
 
 void exceptions_install_vector() {
     // Install branch instructions
-    //exception_install_branch(0x80000100, (uint32_t)&exceptions_vector_reset);
-    //exception_install_branch(0x80000200, (uint32_t)&exceptions_vector_machine_check);
-    //exception_install_branch(0x80000300, (uint32_t)&exceptions_vector_dsi);
-    //exception_install_branch(0x80000400, (uint32_t)&exceptions_vector_isi);
+    exception_install_branch(0x80000100, (uint32_t)&exceptions_vector_reset);
+    exception_install_branch(0x80000200, (uint32_t)&exceptions_vector_machine_check);
+    exception_install_branch(0x80000300, (uint32_t)&exceptions_vector_dsi);
+    exception_install_branch(0x80000400, (uint32_t)&exceptions_vector_isi);
     exception_install_branch(0x80000500, (uint32_t)&exceptions_vector_external);
-    //exception_install_branch(0x80000600, (uint32_t)&exceptions_vector_alignment);
-    //exception_install_branch(0x80000700, (uint32_t)&exceptions_vector_program);
-    //exception_install_branch(0x80000800, (uint32_t)&exceptions_vector_fpu_unavailable);
+    exception_install_branch(0x80000600, (uint32_t)&exceptions_vector_alignment);
+    exception_install_branch(0x80000700, (uint32_t)&exceptions_vector_program);
+    exception_install_branch(0x80000800, (uint32_t)&exceptions_vector_fpu_unavailable);
     exception_install_branch(0x80000900, (uint32_t)&exceptions_vector_decrementer);
 
     // Flush caches
@@ -87,6 +89,19 @@ void exceptions_install_irq(exception_irq_handler_t handler, exception_irq_type_
 }
 
 void exception_reset(exception_context_t* context) {
+    crash_handler_bug_check("RESET", context);
+}
+
+void exception_machine_check(exception_context_t* context) {
+    crash_handler_bug_check("MACHINE CHECK", context);
+}
+
+void exception_dsi(exception_context_t* context) {
+    crash_handler_bug_check("DSI EXCEPTION ON DATA LOAD/STORE", context);
+}
+
+void exception_isi(exception_context_t* context) {
+    crash_handler_bug_check("ISI EXCEPTION ON INSTRUCTION LOAD", context);
 }
 
 void exception_external(exception_context_t* context) {
@@ -103,6 +118,18 @@ void exception_external(exception_context_t* context) {
             irq_handlers[i](i);
         }
     }
+}
+
+void exception_alignment(exception_context_t* context) {
+    crash_handler_bug_check("ALIGNMENT", context);
+}
+
+void exception_program(exception_context_t* context) {
+    crash_handler_bug_check("PROGRAM", context);
+}
+
+void exception_fpu_unavailable(exception_context_t* context) {
+    crash_handler_bug_check("FPU UNIVALBLE", context);
 }
 
 void exception_decrementer(exception_context_t* context) {

@@ -219,6 +219,17 @@ void video_set_framebuffer(const framebuffer_t* framebuffer) {
     SYSTEM_ENABLE_ISR(irq_enabled);
 }
 
+framebuffer_t* video_get_framebuffer() {
+    uint32_t address = VI_TFBL;
+
+    address &= 0x0FFFFFFF;
+    address <<= 5;
+
+    address = SYSTEM_MEM_CACHED(address);
+
+    return (framebuffer_t*)address;
+}
+
 void video_wait_vsync() {
     uint32_t current_count = video_retrace_count;
     while(current_count == video_retrace_count);

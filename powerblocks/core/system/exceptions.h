@@ -97,5 +97,11 @@ extern void exceptions_install_irq(exception_irq_handler_t handler, exception_ir
 
 // Exception handlers called from exceptions_asm.s
 extern void exception_reset(exception_context_t* context);
+extern void exception_machine_check(exception_context_t* context);
+extern void exception_dsi(exception_context_t* context);
+extern void exception_isi(exception_context_t* context);
 extern void exception_external(exception_context_t* context);
+extern void exception_alignment(exception_context_t* context);
+extern void exception_program(exception_context_t* context);
+extern void exception_fpu_unavailable(exception_context_t* context);
 extern void exception_decrementer(exception_context_t* context);

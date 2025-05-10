@@ -50,6 +50,14 @@ extern void video_initialize(video_mode_t mode);
 extern void video_set_framebuffer(const framebuffer_t* framebuffer);
 
 /**
+ * @brief Gets the frame buffer currently displayed.
+ *
+ * Gets the frame buffer currently displayed.
+ * Can be used for some interesting functionality.
+ */
+extern framebuffer_t* video_get_framebuffer();
+
+/**
  * @brief Waits for the next vsync with interrupts
  *
  * Waits for the next vsync, waits for the next display interrupt
