@@ -7,13 +7,13 @@
 
 #include <stdio.h>
 
-framebuffer_t frame_buffer __attribute__((aligned(32)));
+framebuffer_t frame_buffer __attribute__((aligned(512)));
 
 int main() {
     // Currently hardcoded. Eventually this will need to be
     // got from Starlet using incrprocess communication.
     // Works fine with this for now though.
-    video_initialize(VIDEO_MODE_640X480_NTSC_PROGRESSIVE);
+    video_initialize(VIDEO_MODE_640X480_NTSC_INTERLACED);
 
     // Fill background with black
     framebuffer_fill_rgba(&frame_buffer, 0x000000FF, vec2i_new(0,0), vec2i_new(VIDEO_WIDTH, VIDEO_HEIGHT));
@@ -24,10 +24,10 @@ int main() {
     int i = 0;
     
     while(1) {
-        system_flush_dcache(&frame_buffer, sizeof(frame_buffer));
         video_wait_vsync();
 
         printf("Hello World! %d\n", i);
+        system_flush_dcache(&frame_buffer, sizeof(frame_buffer));
         i++;
     }
 

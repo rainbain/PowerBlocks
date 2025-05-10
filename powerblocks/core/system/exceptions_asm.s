@@ -29,8 +29,6 @@
     #
 
     # General purpose, used as task context.
-    mfspr 0, SPRG3
-    stw 0, 0x80(1)
 
     # Save fun state registers
     mfcr 0
@@ -153,8 +151,6 @@ from_trap_\@:
     lmw 2, 0x08(1)
 
     # Task context
-    lwz 0, 0x80(1)
-    mtspr SPRG3, 0
 
     # State registers
     lwz 0, 0x84(1)

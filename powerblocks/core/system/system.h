@@ -131,7 +131,7 @@
     do { \
         uint32_t msr; \
         SYSTEM_GET_MSR(msr); \
-        ee_enabled = (msr >> 16) & 1; \
+        ee_enabled = (msr >> 15) & 1; \
         msr &= ~(0x8000); \
         SYSTEM_SET_MSR(msr); \
     } while(0)

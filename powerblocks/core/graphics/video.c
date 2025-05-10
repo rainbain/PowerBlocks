@@ -116,9 +116,6 @@ static void video_irq_handler(exception_irq_type_t irq) {
     display = VI_DI0;
     if(display & VI_DI_STATUS) {
         VI_DI0 = display & ~VI_DI_STATUS;
-
-        // Iterate this as we have hit the next vsync
-        video_retrace_count++;
     }
 
     display = VI_DI1;
@@ -135,11 +132,18 @@ static void video_irq_handler(exception_irq_type_t irq) {
     if(display & VI_DI_STATUS) {
         VI_DI3 = display & ~VI_DI_STATUS;
     }
+
+    // Iterate this as we have hit the next vsync
+    video_retrace_count++;
 }
 
 
 void video_initialize(video_mode_t mode) {
     const uint16_t* vi_state;
+
+    // Enter safe mode
+    uint32_t irq_enabled;
+    SYSTEM_DISABLE_ISR(irq_enabled);
 
     switch(mode) {
         case VIDEO_MODE_640X480_NTSC_INTERLACED:
@@ -188,9 +192,16 @@ void video_initialize(video_mode_t mode) {
     exceptions_install_irq(video_irq_handler, EXCEPTION_IRQ_TYPE_VIDEO);
 
     LOG_INFO(TAB, "Video interface initialized.");
+
+    SYSTEM_ENABLE_ISR(irq_enabled);
 }
 
 void video_set_framebuffer(const framebuffer_t* framebuffer) {
+    // Enter safe mode
+    uint32_t irq_enabled;
+    SYSTEM_DISABLE_ISR(irq_enabled);
+
+
     uint32_t fb_address = SYSTEM_MEM_PHYSICAL(framebuffer->pixels);
 
     uint32_t feild_1 = fb_address;
@@ -204,6 +215,8 @@ void video_set_framebuffer(const framebuffer_t* framebuffer) {
     // Setting bit 28 makes it so that its (address >> 5) giving the full range of addresses.
     VI_TFBL = (feild_1 >> 5) | 0x10000000;
     VI_BFBL = (feild_2 >> 5) | 0x10000000;
+
+    SYSTEM_ENABLE_ISR(irq_enabled);
 }
 
 void video_wait_vsync() {
