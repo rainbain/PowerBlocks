@@ -24,10 +24,10 @@ int main() {
     int i = 0;
     
     while(1) {
-        system_flush_dcache_nosync(&frame_buffer, sizeof(frame_buffer));
+        system_flush_dcache(&frame_buffer, sizeof(frame_buffer));
         system_delay_int(SYSTEM_S_TO_TICKS(1.0 / 5.0));
 
-        printf("Hello World! %d of 100\n", i);
+        printf("Hello World! %d\n", i);
         i++;
     }
 

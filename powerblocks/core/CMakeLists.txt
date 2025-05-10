@@ -4,9 +4,11 @@ add_library(
     STATIC
 
     system/start.s
+    system/exceptions_asm.s
     system/system_asm.s
     system/libcio.c
     system/system.c
+    system/exceptions.c
 
     graphics/video.c
     graphics/framebuffer.c

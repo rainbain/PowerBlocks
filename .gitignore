@@ -6,3 +6,4 @@ picolibc/lib
 
 # Ignore Example Program build folders
 examples/HelloWorld/build
+.vscode/settings.json

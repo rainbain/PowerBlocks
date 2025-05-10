@@ -9,7 +9,8 @@
  * @license MIT (see LICENSE file)
  */
     .global system_get_time_base_int
-    .global system_flush_dcache_nosync
+    .global system_flush_dcache
+    .global system_invalidate_icache
 
 system_get_time_base_int:
     mftbu 5
@@ -22,7 +23,7 @@ system_get_time_base_int:
 
     blr
 
-system_flush_dcache_nosync:
+system_flush_dcache:
     # Return if size is zero
     cmpwi 4, 0
     beqlr
@@ -37,13 +38,39 @@ system_flush_dcache_nosync:
     addi    6, 6, 31
     rlwinm  6, 6, 0, 0xFFFFFFE0
 
-loop:
+loop0:
     # Flush line
     dcbf    0, 5
 
     # Iterate
     addi    5, 5, 32
     cmpw    5, 6
-    blt     loop
+    blt     loop0
+
+    blr
+
+system_invalidate_icache:
+    # Return if size is zero
+    cmpwi 4, 0
+    beqlr
+
+    # Align Start Address
+    rlwinm  5, 3, 0, 0xFFFFFFE0
+
+    # Create end address
+    # Round up to cover a partial line
+    # Then algin end address
+    add     6, 3, 4
+    addi    6, 6, 31
+    rlwinm  6, 6, 0, 0xFFFFFFE0
+
+loop1:
+    # Flush line
+    icbi    0, 5
+
+    # Iterate
+    addi    5, 5, 32
+    cmpw    5, 6
+    blt     loop1
 
     blr
