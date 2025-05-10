@@ -38,7 +38,45 @@ typedef struct {
 
     uint32_t gqr0, gqr1, gqr2, gqr3;
     uint32_t gqr4, gqr5, gqr6, gqr7;
+
+    float f[32];
+    uint32_t ffs;
 } exception_context_t;
+
+/**
+ * @enum exception_irq_type_t
+ * @brief Types of IRQs during external exceptions.
+ *
+ * Types of IRQs during external exceptions retrievd from the processor interface.
+ * Also used to enable/disable interrupts. 
+ */
+typedef enum {
+    EXCEPTION_IRQ_TYPE_GP_RUNTIME,
+    EXCEPTION_IRQ_TYPE_RESET_SWITCH,
+    EXCEPTION_IRQ_TYPE_DVD,
+    EXCEPTION_IRQ_TYPE_SERIAL,
+    EXCEPTION_IRQ_TYPE_EXI,
+    EXCEPTION_IRQ_TYPE_STREAMING,
+    EXCEPTION_IRQ_TYPE_DSP,
+    EXCEPTION_IRQ_TYPE_MEMORY,
+    EXCEPTION_IRQ_TYPE_VIDEO,
+    EXCEPTION_IRQ_TYPE_PE_TOKEN,
+    EXCEPTION_IRQ_TYPE_PE_FINISH,
+    EXCEPTION_IRQ_TYPE_FIFO,
+    EXCEPTION_IRQ_TYPE_DEBUGGER,
+    EXCEPTION_IRQ_TYPE_HSP
+} exception_irq_type_t;
+
+/**
+ * @typedef exception_irq_handler_t
+ * @brief Function pointer to handle irq exceptions.
+ *
+ * Function pointer to handle irq exceptions.
+ * Use exceptions_install_irq to set it.
+ *
+ * @param irq The IRQ type its handling.
+ */
+typedef void (*exception_irq_handler_t)(exception_irq_type_t irq);
 
  /**
  *  @brief Installs the exception vector into the CPU.
@@ -50,6 +88,14 @@ typedef struct {
  */
 extern void exceptions_install_vector();
 
+ /**
+ *  @brief Registers an interrupt handler for an IRQ.
+ *
+ * Registers an interrupt handler using a IRQ type
+ */
+extern void exceptions_install_irq(exception_irq_handler_t handler, exception_irq_type_t type);
+
 // Exception handlers called from exceptions_asm.s
 extern void exception_reset(exception_context_t* context);
+extern void exception_external(exception_context_t* context);
 extern void exception_decrementer(exception_context_t* context);

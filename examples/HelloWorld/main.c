@@ -25,7 +25,7 @@ int main() {
     
     while(1) {
         system_flush_dcache(&frame_buffer, sizeof(frame_buffer));
-        system_delay_int(SYSTEM_S_TO_TICKS(1.0 / 5.0));
+        video_wait_vsync();
 
         printf("Hello World! %d\n", i);
         i++;

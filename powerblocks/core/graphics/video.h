@@ -50,9 +50,20 @@ extern void video_initialize(video_mode_t mode);
 extern void video_set_framebuffer(const framebuffer_t* framebuffer);
 
 /**
+ * @brief Waits for the next vsync with interrupts
+ *
+ * Waits for the next vsync, waits for the next display interrupt
+ * to measure when the display goes into retrace.
+ */
+extern void video_wait_vsync();
+
+/**
  * @brief Waits for the next vsync without interrupts.
  *
  * Waits for the next vsync, in a interrupt handler safe way.
  * It does by just waiting till the vertical position is in range.
+ * 
+ * This function seems to have some issues, make sure it actually works.
+ * May or may not be an emulator thing.
  */
 extern void video_wait_vsync_int();

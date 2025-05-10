@@ -16,7 +16,7 @@
     clrlwi 1, 1, 2
 
     # Create stack frame
-    stwu 1, -192(1)
+    stwu 1, -336(1)
 
     # Save r0
     stw 0, 0x04(1)
@@ -68,6 +68,50 @@
     mfspr 0, 919
     stw 0, 0xBC(1)
 
+    # Enable FPU in MSR
+    mfmsr 3
+    ori 3, 3, 0x2000
+    mtmsr 3
+    isync
+
+    # Store Floats
+    stfd 0, 0xC0(1)
+    stfd 1, 0xC4(1)
+    stfd 2, 0xC8(1)
+    stfd 3, 0xCC(1)
+    stfd 4, 0xD0(1)
+    stfd 5, 0xD4(1)
+    stfd 6, 0xD8(1)
+    stfd 7, 0xDC(1)
+    stfd 8, 0xE0(1)
+    stfd 9, 0xE4(1)
+    stfd 10, 0xE8(1)
+    stfd 11, 0xEC(1)
+    stfd 12, 0xF0(1)
+    stfd 13, 0xF4(1)
+    stfd 14, 0xF8(1)
+    stfd 15, 0xFC(1)
+    stfd 16, 0x100(1)
+    stfd 17, 0x104(1)
+    stfd 18, 0x108(1)
+    stfd 19, 0x10C(1)
+    stfd 20, 0x110(1)
+    stfd 21, 0x114(1)
+    stfd 22, 0x118(1)
+    stfd 23, 0x11C(1)
+    stfd 24, 0x120(1)
+    stfd 25, 0x124(1)
+    stfd 26, 0x128(1)
+    stfd 27, 0x12C(1)
+    stfd 28, 0x130(1)
+    stfd 29, 0x134(1)
+    stfd 30, 0x138(1)
+    stfd 31, 0x13C(1)
+
+    # Float State
+    mffs 0
+    stfd 0, 0x140(1)
+
     #
     # Disable exceptions, Reenable MMU
     # We load the new MSR value in SRR1, and the new address in SRR0
@@ -96,7 +140,7 @@ from_trap_\@:
 
     # Load R3 with stack frame address
     # This will be the first argument
-    addi 3, 1, 192
+    addi 3, 1, 336
 
 .endm
 
@@ -148,11 +192,48 @@ from_trap_\@:
     lwz 0, 0xBC(1)
     mtspr 919, 0
 
+    # Restore Floats
+    lfd 0, 0xC0(1)
+    lfd 1, 0xC4(1)
+    lfd 2, 0xC8(1)
+    lfd 3, 0xCC(1)
+    lfd 4, 0xD0(1)
+    lfd 5, 0xD4(1)
+    lfd 6, 0xD8(1)
+    lfd 7, 0xDC(1)
+    lfd 8, 0xE0(1)
+    lfd 9, 0xE4(1)
+    lfd 10, 0xE8(1)
+    lfd 11, 0xEC(1)
+    lfd 12, 0xF0(1)
+    lfd 13, 0xF4(1)
+    lfd 14, 0xF8(1)
+    lfd 15, 0xFC(1)
+    lfd 16, 0x100(1)
+    lfd 17, 0x104(1)
+    lfd 18, 0x108(1)
+    lfd 19, 0x10C(1)
+    lfd 20, 0x110(1)
+    lfd 21, 0x114(1)
+    lfd 22, 0x118(1)
+    lfd 23, 0x11C(1)
+    lfd 24, 0x120(1)
+    lfd 25, 0x124(1)
+    lfd 26, 0x128(1)
+    lfd 27, 0x12C(1)
+    lfd 28, 0x130(1)
+    lfd 29, 0x134(1)
+    lfd 30, 0x138(1)
+    lfd 31, 0x13C(1)
+
+    lfd 0, 0x140(1)
+    mtfsf 255, 0
+
     # Restore r0
     lwz 0, 0x04(1)
 
     # Restore stack pointer
-    addi 1, 1, 192
+    addi 1, 1, 336
 
     rfi
 .endm
@@ -192,6 +273,7 @@ exceptions_vector_isi:
 .global exceptions_vector_external
 exceptions_vector_external:
     exceptions_context_save
+    bl exception_external
     exceptions_context_restore
 
 // 0x0600

@@ -13,6 +13,7 @@
 #include "video.h"
 
 #include "system/system.h"
+#include "system/exceptions.h"
 
 #include "utils/log.h"
 
@@ -34,6 +35,11 @@ static const char* TAB = "VIDEO";
 #define VI_BFBR (*(volatile uint32_t*)0xCC002028)
 #define VI_DPV  (*(volatile uint16_t*)0xCC00202C)
 
+#define VI_DI0  (*(volatile uint32_t*)0xCC002030)
+#define VI_DI1  (*(volatile uint32_t*)0xCC002034)
+#define VI_DI2  (*(volatile uint32_t*)0xCC002038)
+#define VI_DI3  (*(volatile uint32_t*)0xCC00203C)
+
 #define VI_DCR_ENABLE      (1<<0)
 #define VI_DCR_RESET       (1<<1)
 #define VI_DCR_PROGRESSIVE (1<<2)
@@ -52,8 +58,12 @@ static const char* TAB = "VIDEO";
 #define VI_DCR_FORMAT_MPAL     2
 #define VI_DCR_FORMAT_RESERVED 3
 
+#define VI_DI_STATUS  (1<<31)
+#define VI_DI_ENABLE  (1<<28)
+
 
 static video_mode_t video_mode = VIDEO_MODE_UNINITIALIZED;
+static volatile uint32_t video_retrace_count;
 
 // VI States taken from BootMii
 /// TODO: BEFORE RELEASE - Make these dynamic.
@@ -98,6 +108,36 @@ static const uint16_t VIDEO_Mode640X480NtsciYUV16[64] = {
     0x0280, 0x807A, 0x019C, 0x00FF, 0x00FF, 0x00FF, 0x00FF, 0x00FF};
 
 
+
+static void video_irq_handler(exception_irq_type_t irq) {
+    uint32_t display;
+
+    // Acknowledge and clear interrupts for the 4 displays.
+    display = VI_DI0;
+    if(display & VI_DI_STATUS) {
+        VI_DI0 = display & ~VI_DI_STATUS;
+
+        // Iterate this as we have hit the next vsync
+        video_retrace_count++;
+    }
+
+    display = VI_DI1;
+    if(display & VI_DI_STATUS) {
+        VI_DI1 = display & ~VI_DI_STATUS;
+    }
+
+    display = VI_DI2;
+    if(display & VI_DI_STATUS) {
+        VI_DI2 = display & ~VI_DI_STATUS;
+    }
+
+    display = VI_DI3;
+    if(display & VI_DI_STATUS) {
+        VI_DI3 = display & ~VI_DI_STATUS;
+    }
+}
+
+
 void video_initialize(video_mode_t mode) {
     const uint16_t* vi_state;
 
@@ -124,6 +164,9 @@ void video_initialize(video_mode_t mode) {
     system_delay_int(SYSTEM_US_TO_TICKS(10));
     VI_DCR = 0;
 
+    // Reset retrace count
+    video_retrace_count = 0;
+
     // Copy in Settings
     for(int i = 0; i < 64; i++) {
         volatile uint16_t* reg = (volatile uint16_t*)(VI_BASE + i * 2);
@@ -140,6 +183,9 @@ void video_initialize(video_mode_t mode) {
     VI_DCR = vi_state[1];
 
     video_mode = mode;
+
+    // Register interrupt
+    exceptions_install_irq(video_irq_handler, EXCEPTION_IRQ_TYPE_VIDEO);
 
     LOG_INFO(TAB, "Video interface initialized.");
 }
@@ -158,6 +204,11 @@ void video_set_framebuffer(const framebuffer_t* framebuffer) {
     // Setting bit 28 makes it so that its (address >> 5) giving the full range of addresses.
     VI_TFBL = (feild_1 >> 5) | 0x10000000;
     VI_BFBL = (feild_2 >> 5) | 0x10000000;
+}
+
+void video_wait_vsync() {
+    uint32_t current_count = video_retrace_count;
+    while(current_count == video_retrace_count);
 }
 
 void video_wait_vsync_int() {
