@@ -92,3 +92,8 @@ Make and install
 make -j$(nproc)
 make install
 ```
+
+Also, make sure to include the license file for picolibc.
+```
+cp ../COPYING.picolibc ${SDK_HOME}/picolibc/COPYING.picolibc
+```

@@ -19,6 +19,12 @@ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
    Modified by Jeff Johnston, Red Hat Inc. 2 Oct 2001.
    Modified by Sebastian Huber, embedded brains GmbH. 22 Sep 2022.  */
 
+/*
+ * Modifications by: Samuel Fitzsimons (rainbain)
+ * Date: 5/11/2025
+ * Change: Fixed branch with link instructions.
+*/
+
 #include <picolibc.h>
 
 #include "ppc-asm.h"
