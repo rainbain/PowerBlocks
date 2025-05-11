@@ -15,7 +15,14 @@
 
 #define HORIZONTAL_SPACING ((VIDEO_WIDTH - (BORDERS+TEXT_BORDER) * 2) / 4)
 
+static crash_handler_t system_crash_handler = NULL;
+
 void crash_handler_bug_check(const char* cause, exception_context_t* ctx) {
+    if(system_crash_handler) {
+        system_crash_handler(cause, ctx);
+        return;
+    }
+    
     // Make sure interrupts are disabled
     uint32_t irq_enabled;
     SYSTEM_DISABLE_ISR(irq_enabled);
@@ -80,4 +87,8 @@ void crash_handler_bug_check(const char* cause, exception_context_t* ctx) {
 
     // Infinite Loop
     while(1);
+}
+
+void crash_handler_set(crash_handler_t handler) {
+    system_crash_handler = handler;
 }
