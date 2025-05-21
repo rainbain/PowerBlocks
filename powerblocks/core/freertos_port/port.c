@@ -25,6 +25,19 @@ static uint32_t entry_point_stack_pointer;
 // enable interrupts unless already enabled.
 uint32_t freertos_isr_enabled;
 
+// The idle thread is statically allocated. So we will need something to provide that memory.
+static StaticTask_t xIdleTaskTCB;
+static StackType_t uxIdleTaskStack[configMINIMAL_STACK_SIZE];
+
+void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
+                                   StackType_t **ppxIdleTaskStackBuffer,
+                                   uint32_t *pulIdleTaskStackSize)
+{
+    *ppxIdleTaskTCBBuffer = &xIdleTaskTCB;
+    *ppxIdleTaskStackBuffer = uxIdleTaskStack;
+    *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+}
+
 BaseType_t xPortStartScheduler( void )
 {
     // Set tick time
@@ -61,15 +74,6 @@ StackType_t * pxPortInitialiseStack( StackType_t * pxTopOfStack,
 void vPortYield( void )
 {
     SYSCALL_YIELD();
-}
-
-void prvTickISR( void )
-{
-    /* Maintain the tick count. */
-    if( xTaskIncrementTick() != pdFALSE ) {
-        /* Switch to the highest priority task that is ready to run. */
-        vTaskSwitchContext();
-    }
 }
 
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char * pcTaskName ) {

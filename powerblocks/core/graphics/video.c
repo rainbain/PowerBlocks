@@ -15,6 +15,9 @@
 #include "system/system.h"
 #include "system/exceptions.h"
 
+#include "FreeRTOS.h"
+#include "semphr.h"
+
 #include "utils/log.h"
 
 static const char* TAB = "VIDEO";
@@ -63,7 +66,9 @@ static const char* TAB = "VIDEO";
 
 
 static video_mode_t video_mode = VIDEO_MODE_UNINITIALIZED;
-static volatile uint32_t video_retrace_count;
+
+static StaticSemaphore_t video_retrace_semaphore_static;
+static SemaphoreHandle_t video_retrace_semaphore; 
 
 // VI States taken from BootMii
 /// TODO: BEFORE RELEASE - Make these dynamic.
@@ -133,15 +138,18 @@ static void video_irq_handler(exception_irq_type_t irq) {
         VI_DI3 = display & ~VI_DI_STATUS;
     }
 
-    // Iterate this as we have hit the next vsync
-    video_retrace_count++;
+    // Alert waiting task of vsync
+    xSemaphoreGiveFromISR(video_retrace_semaphore, &exception_isr_context_switch_needed);
 }
 
 
 void video_initialize(video_mode_t mode) {
     const uint16_t* vi_state;
 
-    // Enter safe mode
+    // Create semaphore for retrace (vsync)
+    video_retrace_semaphore = xSemaphoreCreateBinaryStatic(&video_retrace_semaphore_static);
+
+    // Enter safe mode when initializing hardware.
     uint32_t irq_enabled;
     SYSTEM_DISABLE_ISR(irq_enabled);
 
@@ -167,9 +175,6 @@ void video_initialize(video_mode_t mode) {
     VI_DCR = VI_DCR_RESET;
     system_delay_int(SYSTEM_US_TO_TICKS(10));
     VI_DCR = 0;
-
-    // Reset retrace count
-    video_retrace_count = 0;
 
     // Copy in Settings
     for(int i = 0; i < 64; i++) {
@@ -231,8 +236,8 @@ framebuffer_t* video_get_framebuffer() {
 }
 
 void video_wait_vsync() {
-    uint32_t current_count = video_retrace_count;
-    while(current_count == video_retrace_count);
+    // Wait till vsync is alerted
+    xSemaphoreTake(video_retrace_semaphore, portMAX_DELAY);   
 }
 
 void video_wait_vsync_int() {

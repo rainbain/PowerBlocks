@@ -67,6 +67,15 @@ typedef enum {
     EXCEPTION_IRQ_TYPE_HSP
 } exception_irq_type_t;
 
+ /**
+ *  @brief Call the context switch at the end of the ISR if true.
+ *
+ * Call the context switch at the end of the ISR if true.
+ * Usually used along side xSemaphoreGiveFromISR such that
+ * awoken task are switched into when a ISR wakes a task.
+ */
+extern int32_t exception_isr_context_switch_needed;
+
 /**
  * @typedef exception_irq_handler_t
  * @brief Function pointer to handle irq exceptions.

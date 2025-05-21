@@ -13,6 +13,7 @@
 #include "exceptions.h"
 
 #include "FreeRTOS.h"
+#include "task.h"
 
 #include "utils/crash_handler.h"
 
@@ -37,6 +38,8 @@ extern const void* exceptions_vector_syscall;
 // Processor Interface Registers
 #define PI_INTSR  (*(volatile uint32_t*)0xCC003000)
 #define PI_INTMR  (*(volatile uint32_t*)0xCC003004)
+
+int32_t exception_isr_context_switch_needed;
 
 // The IRQ handlers used with the processor interface
 static exception_irq_handler_t irq_handlers[14];
@@ -113,6 +116,9 @@ void exception_isi(exception_context_t* context) {
 }
 
 void exception_external(exception_context_t* context) {
+    // Start with this being off
+    exception_isr_context_switch_needed = 0;
+
     // Get IRQ cause and mask
     uint32_t irq_cause = PI_INTSR;
     uint32_t irq_mask = PI_INTMR;
@@ -125,6 +131,10 @@ void exception_external(exception_context_t* context) {
         if((irq_cause & (1<<i)) && (irq_handlers[i] != NULL)) {
             irq_handlers[i](i);
         }
+    }
+
+    if(exception_isr_context_switch_needed != 0) {
+        vTaskSwitchContext();
     }
 }
 
@@ -144,7 +154,10 @@ void exception_decrementer(exception_context_t* context) {
     // Set tick time
     SYSTEM_SET_DEC(SYSTEM_TB_CLOCK_HZ/configTICK_RATE_HZ);
 
-    prvTickISR();
+    if( xTaskIncrementTick() != pdFALSE ) {
+        /* Switch to the highest priority task that is ready to run. */
+        vTaskSwitchContext();
+    }
 }
 
 void exception_syscall(exception_context_t* context) {

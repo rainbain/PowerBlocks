@@ -65,6 +65,9 @@
 // FreeRTOS Assertions
 #define configASSERT(x) ASSERT(x)
 
+// I like static alloc functions for debugging and minimizing fragmentation
+#define configSUPPORT_STATIC_ALLOCATION 1
+
 // Feature enable/disable
 #define configUSE_TASK_NOTIFICATIONS   1
 #define configUSE_MUTEXES              1

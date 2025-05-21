@@ -36,7 +36,7 @@ void system_initialize() {
     exceptions_install_vector();
 
     // Create main task and start scheduler
-    xTaskCreate(main, "MAIN", SYSTEM_MAIN_STACK_SIZE, NULL, configMAX_PRIORITIES - 1, NULL);
+    xTaskCreate(main, "MAIN", SYSTEM_MAIN_STACK_SIZE, NULL, configMAX_PRIORITIES / 2, NULL);
     vTaskStartScheduler();
 
     // We do not expect execution to return here.

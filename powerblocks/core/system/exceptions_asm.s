@@ -137,7 +137,7 @@ from_trap_\@:
     oris 1, 1, 0x8000
 
     # Save stack into pxCurrentTCB if needed
-    lis 3, pxCurrentTCB@h
+    lis 3, pxCurrentTCB@ha
     lwz 4, pxCurrentTCB@l(3)
     cmpwi 4, 0
     beq is_null_\@
@@ -162,7 +162,7 @@ is_null_\@:
     addi 1, 1, 36
 
     # Restore pxCurrentTCB if needed
-    lis 3, pxCurrentTCB@h
+    lis 3, pxCurrentTCB@ha
     lwz 4, pxCurrentTCB@l(3)
     cmpwi 4, 0
     beq is_null_\@
