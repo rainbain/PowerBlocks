@@ -11,9 +11,15 @@
 
 #include "system.h"
 
+#include "FreeRTOS.h"
+#include "task.h"
+
 #include <stdbool.h>
 
 #include "exceptions.h"
+
+// Main of the application of the user.
+extern void main();
 
 void system_delay_int(uint64_t ticks) {
     uint64_t stop = system_get_time_base_int() + ticks;
@@ -29,9 +35,9 @@ void system_initialize() {
     // Install exception handlers
     exceptions_install_vector();
 
-    /// TODO: Update with context switching time
-    SYSTEM_SET_DEC(SYSTEM_S_TO_TICKS(1));
+    // Create main task and start scheduler
+    xTaskCreate(main, "MAIN", SYSTEM_MAIN_STACK_SIZE, NULL, configMAX_PRIORITIES - 1, NULL);
+    vTaskStartScheduler();
 
-    // Force enable interrupts
-    SYSTEM_ENABLE_ISR(true);
+    // We do not expect execution to return here.
 }

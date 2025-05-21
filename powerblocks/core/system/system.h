@@ -13,6 +13,8 @@
 
 #include <stdint.h>
 
+#include "powerblocks/core/system/syscall.h"
+
 /** @def SYSTEM_BUS_CLOCK_HZ
  *  @brief Memory bus clock speed
  *
@@ -79,6 +81,15 @@
  *  This is done by setting the MSB nibble.
  */
 #define SYSTEM_MEM_PHYSICAL(address) ((uint32_t)(address) & 0x0FFFFFFF)
+
+ /** @def SYSTEM_MAIN_STACK_SIZE
+ *  @brief Size of the stack of the application main.
+ *
+ *  Size of the stack of the application main.
+ *  When the system starts, the main() will be a FreeRTOS task
+ *  of this stack size.
+ */
+#define SYSTEM_MAIN_STACK_SIZE (1024*1024*4) // 4 MB
 
  /** @def SYSTEM_GET_MSR
  *  @brief Gets the value of the MSR register
@@ -170,6 +181,38 @@
     __asm__ __volatile__( \
         "isync" \
     );
+
+ /** @def ASSERT
+ *  @brief Triggers a crash with debug info if a condition fails.
+ *
+ *  Triggers a crash with debug info if a condition fails.
+ */
+#define ASSERT(x) \
+    if((x) == 0) { \
+        SYSCALL_ASSERT(__LINE__, __FILE__); \
+    }
+
+ /** @def SYSTEM_SWITCH_SP
+ *  @brief Switches the stack pointer with pxCurrentTCB in a task switch.
+ *
+ *  Switches the stack pointer with pxCurrentTCB in a task switch.
+ *  Do not call this outside of exception handers/syscalls that switch execution context.
+ */
+#define SYSTEM_SWITCH_SP(x) \
+     __asm__ __volatile__ (                      \
+        "lis    r3, pxCurrentTCB@ha\n\t"        \
+        "lwz    r4, pxCurrentTCB@l(r3)\n\t"     /* r4 = pxCurrentTCB */ \
+        "mr     r5, r1\n\t"                     /* r5 = current SP */ \
+        "stw    r5, 0(r4)\n\t"                  /* pxCurrentTCB->pxTopOfStack = SP */ \
+                                                \
+        /* Call vTaskSwitchContext() */         \
+        "bl     vTaskSwitchContext\n\t"         \
+                                                \
+        "lis    r3, pxCurrentTCB@ha\n\t"        \
+        "lwz    r4, pxCurrentTCB@l(r3)\n\t"     /* r4 = pxCurrentTCB */ \
+        "lwz    r1, 0(r4)\n\t"                  /* SP = pxCurrentTCB->pxTopOfStack */ \
+    )
+
 
 
  /**

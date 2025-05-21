@@ -43,7 +43,7 @@ void crash_handler_bug_check(const char* cause, exception_context_t* ctx) {
     if(ctx) {
         char buffer[32];
 
-        sprintf(buffer, "PC: %08XH", ctx->ssr0);
+        sprintf(buffer, "PC: %08XH", ctx->srr0);
         framebuffer_put_text(fb, 0xFFFFFFFF, 0x00000000, text_pos, &font, buffer);
 
         text_pos.y += font.character_size.y * 2;
@@ -75,7 +75,7 @@ void crash_handler_bug_check(const char* cause, exception_context_t* ctx) {
             for(int x = 0; x < 4; x++) {
                 int index = y + x * 8;
                 sprintf(buffer, "F%02d:%+1.4E", index, ctx->f[index]);
-                framebuffer_put_text(fb, 0xFFFFFFFF, 0x00000000, vec2i_new(text_pos.x + HORIZONTAL_SPACING * x, text_pos.y), &font, buffer);
+                //framebuffer_put_text(fb, 0xFFFFFFFF, 0x00000000, vec2i_new(text_pos.x + HORIZONTAL_SPACING * x, text_pos.y), &font, buffer);
             }
 
             text_pos.y += font.character_size.y;

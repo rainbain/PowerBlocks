@@ -34,13 +34,13 @@ typedef struct {
     uint32_t sprg3;
 
     uint32_t cr, lr, ctr, xer, dar;
-    uint32_t ssr1, ssr0;
+    uint32_t srr1, srr0;
 
     uint32_t gqr0, gqr1, gqr2, gqr3;
     uint32_t gqr4, gqr5, gqr6, gqr7;
 
-    float f[32];
-    uint32_t ffs;
+    double f[32];
+    uint64_t ffs;
 } exception_context_t;
 
 /**
@@ -105,3 +105,7 @@ extern void exception_alignment(exception_context_t* context);
 extern void exception_program(exception_context_t* context);
 extern void exception_fpu_unavailable(exception_context_t* context);
 extern void exception_decrementer(exception_context_t* context);
+extern void exception_syscall(exception_context_t* context);
+
+// Used as just the tail end of a exception for jumping to the first task
+extern void exceptions_start_first_task();

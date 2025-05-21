@@ -14,4 +14,6 @@ target_link_libraries(
 
 add_library(PowerBlocks::Common ALIAS PowerBlocksCommon)
 
+set(FREERTOS_PATH ${CMAKE_CURRENT_LIST_DIR}/third_party/freertos)
+
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/powerblocks" "${CMAKE_BINARY_DIR}/powerblocks")

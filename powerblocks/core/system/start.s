@@ -15,6 +15,5 @@
 _start:
     bl __libc_init_array
     bl system_initialize
-    bl main
 trap:
     b trap

@@ -12,9 +12,12 @@
 
 #include "exceptions.h"
 
+#include "FreeRTOS.h"
+
 #include "utils/crash_handler.h"
 
 #include "system.h"
+#include "syscall.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -29,6 +32,7 @@ extern const void* exceptions_vector_alignment;
 extern const void* exceptions_vector_program;
 extern const void* exceptions_vector_fpu_unavailable;
 extern const void* exceptions_vector_decrementer;
+extern const void* exceptions_vector_syscall;
 
 // Processor Interface Registers
 #define PI_INTSR  (*(volatile uint32_t*)0xCC003000)
@@ -36,6 +40,9 @@ extern const void* exceptions_vector_decrementer;
 
 // The IRQ handlers used with the processor interface
 static exception_irq_handler_t irq_handlers[14];
+
+// From FreeRTOS port.c file
+extern void prvTickISR();
 
 // Inserts a b <RELATIVE ADDRESS> instruction at the givin address
 void exception_install_branch(uint32_t address, uint32_t handler) {
@@ -61,10 +68,11 @@ void exceptions_install_vector() {
     exception_install_branch(0x80000700, (uint32_t)&exceptions_vector_program);
     exception_install_branch(0x80000800, (uint32_t)&exceptions_vector_fpu_unavailable);
     exception_install_branch(0x80000900, (uint32_t)&exceptions_vector_decrementer);
+    exception_install_branch(0x80000C00, (uint32_t)&exceptions_vector_syscall);
 
     // Flush caches
-    system_flush_dcache((void*)0x80000100, 0x800);
-    system_invalidate_icache((void*)0x80000100, 0x800);
+    system_flush_dcache((void*)0x80000000, 0x1000);
+    system_invalidate_icache((void*)0x80000000, 0x1000);
 
     // Sync to make sure changes are good
     SYSTEM_SYNC();
@@ -133,5 +141,21 @@ void exception_fpu_unavailable(exception_context_t* context) {
 }
 
 void exception_decrementer(exception_context_t* context) {
-    SYSTEM_SET_DEC(SYSTEM_S_TO_TICKS(1));
+    // Set tick time
+    SYSTEM_SET_DEC(SYSTEM_TB_CLOCK_HZ/configTICK_RATE_HZ);
+
+    prvTickISR();
+}
+
+void exception_syscall(exception_context_t* context) {
+    uint32_t syscall_id = context->r0;
+
+    if(syscall_id >= SYSCALL_REGISTRY_SIZE) {
+        crash_handler_bug_check("INVALID SYSCALL", context);
+        return;
+    }
+
+    syscall_handler_t handler = syscall_registry[syscall_id];
+
+    context->r3 = handler(context, context->r3, context->r4, context->r5);
 }

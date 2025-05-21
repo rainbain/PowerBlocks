@@ -8,6 +8,7 @@
  * @date 2025
  * @license MIT (see LICENSE file)
  */
+
     .global system_get_time_base_int
     .global system_flush_dcache
     .global system_invalidate_icache

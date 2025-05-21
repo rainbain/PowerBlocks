@@ -24,6 +24,12 @@ set(LINKER_SCRIPT "${TOOLCHAIN_DIR}/linker.ld")
 # This would then be pasted to ld.lld, it would not understand that, and error out.
 set(CMAKE_C_LINK_EXECUTABLE "ld.lld -T${LINKER_SCRIPT} <CMAKE_C_LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
 
+# Relative Paths for __FILE__
+add_compile_options(
+    "-fmacro-prefix-map=${CMAKE_SOURCE_DIR}=."
+)
+
 # Compiler flags
+# The magic -D thing is to fix __FILE__ paths to not be absolute.
 set(CMAKE_C_FLAGS "-mcpu=750 -ffreestanding -nostdlib -I${CMAKE_CURRENT_LIST_DIR} ${EXTRA_C_FLAGS}")
 set(CMAKE_ASM_FLAGS "-I${CMAKE_CURRENT_LIST_DIR} ${EXTRA_C_FLAGS} -Qunused-arguments")
