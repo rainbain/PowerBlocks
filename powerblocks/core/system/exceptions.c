@@ -42,7 +42,7 @@ extern const void* exceptions_vector_syscall;
 int32_t exception_isr_context_switch_needed;
 
 // The IRQ handlers used with the processor interface
-static exception_irq_handler_t irq_handlers[14];
+static exception_irq_handler_t irq_handlers[EXCEPTION_IRQ_COUNT];
 
 // From FreeRTOS port.c file
 extern void prvTickISR();
@@ -76,10 +76,6 @@ void exceptions_install_vector() {
     // Flush caches
     system_flush_dcache((void*)0x80000000, 0x1000);
     system_invalidate_icache((void*)0x80000000, 0x1000);
-
-    // Sync to make sure changes are good
-    SYSTEM_SYNC();
-    SYSTEM_ISYNC();
 
     // Clear IRQ handlers
     memset(irq_handlers, 0, sizeof(irq_handlers));
@@ -127,7 +123,7 @@ void exception_external(exception_context_t* context) {
     irq_cause &= irq_mask;
 
     // Go through each bit.
-    for(int i = 0; i < 14; i++) {
+    for(int i = 0; i < EXCEPTION_IRQ_COUNT; i++) {
         if((irq_cause & (1<<i)) && (irq_handlers[i] != NULL)) {
             irq_handlers[i](i);
         }

@@ -11,6 +11,7 @@
 
     .global system_get_time_base_int
     .global system_flush_dcache
+    .global system_invalidate_dcache
     .global system_invalidate_icache
 
 system_get_time_base_int:
@@ -48,6 +49,34 @@ loop0:
     cmpw    5, 6
     blt     loop0
 
+    sync
+    blr
+
+system_invalidate_dcache:
+    # Return if size is zero
+    cmpwi 4, 0
+    beqlr
+
+    # Align Start Address
+    rlwinm  5, 3, 0, 0xFFFFFFE0
+
+    # Create end address
+    # Round up to cover a partial line
+    # Then algin end address
+    add     6, 3, 4
+    addi    6, 6, 31
+    rlwinm  6, 6, 0, 0xFFFFFFE0
+
+loop1:
+    # Flush line
+    dcbi    0, 5
+
+    # Iterate
+    addi    5, 5, 32
+    cmpw    5, 6
+    blt     loop1
+
+    sync
     blr
 
 system_invalidate_icache:
@@ -65,13 +94,14 @@ system_invalidate_icache:
     addi    6, 6, 31
     rlwinm  6, 6, 0, 0xFFFFFFE0
 
-loop1:
+loop2:
     # Flush line
     icbi    0, 5
 
     # Iterate
     addi    5, 5, 32
     cmpw    5, 6
-    blt     loop1
+    blt     loop2
 
+    isync
     blr

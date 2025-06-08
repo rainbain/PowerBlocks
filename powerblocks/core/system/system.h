@@ -248,6 +248,14 @@ extern void system_delay_int(uint64_t ticks);
 extern void system_flush_dcache(void* data, uint32_t size);
 
 /**
+ * @brief Invalidates data cache in a range
+ *
+ * Invalidates the CPUs data cache in a range such
+ * that all changes from hardware are visible to the CPU.
+ */
+extern void system_invalidate_dcache(void* data, uint32_t size);
+
+/**
  * @brief Invalidates the instruction cache in a range.
  *
  * Invalidates the CPUs instruction cache in a range such
@@ -257,6 +265,26 @@ extern void system_flush_dcache(void* data, uint32_t size);
  * may not be done invalidating.
  */
 extern void system_invalidate_icache(void* data, uint32_t size);
+
+/**
+ * @brief Allocate memory with alignment.
+ * 
+ *  Allocate memory aligned to a certain number of bytes.
+ *  A lot of hardware requires aligned memory. Usually 32 bytes.
+ * 
+ *  Must be a power of 2.
+ *  
+ *  Offsets the pointer by the alignment and stores the original unaligned
+ *  pointer before the pointer returned.
+ */
+extern void* system_aligned_malloc(uint32_t bytes, uint32_t alignment);
+
+/**
+ * @brief Free allocated memory with alignment.
+ * 
+ * Free allocated memory with alignment.
+ */
+extern void system_aligned_free(void* ptr);
 
 /**
  * @brief Initializes the system.

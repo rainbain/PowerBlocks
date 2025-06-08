@@ -14,6 +14,24 @@
 
 #include <stdint.h>
 
+/** @def EXCEPTION_IRQ_COUNT
+ *  @brief Number of IRQ bits on the system.
+ *
+ *  Number of IRQ bits on the system.
+ */
+#define EXCEPTION_IRQ_COUNT 15
+
+/** @def EXCEPTION_PPC_IRQ
+ *  @brief Access to Holywoods Interrupt Controller Flags
+ *
+ *  There appears to be another interrupt controller inside of
+ *  hollywood added on the Wii.
+ * 
+ *  This is needed for acknowledging interrupts through it.
+ */
+#define EXCEPTION_PPC_IRQ       (*(volatile uint32_t*)0xcd000030)
+#define EXCEPTION_PPC_IRQ_MASK  (*(volatile uint32_t*)0xcd000034)
+
 /**
  * @struct exception_context_t
  * @brief Pointer to the stack frame of the saved context during interrupts.
@@ -64,7 +82,8 @@ typedef enum {
     EXCEPTION_IRQ_TYPE_PE_FINISH,
     EXCEPTION_IRQ_TYPE_FIFO,
     EXCEPTION_IRQ_TYPE_DEBUGGER,
-    EXCEPTION_IRQ_TYPE_HSP
+    EXCEPTION_IRQ_TYPE_HSP,
+    EXCEPTION_IRQ_TYPE_IPC
 } exception_irq_type_t;
 
  /**

@@ -10,6 +10,8 @@ add_library(
     system/system.c
     system/exceptions.c
     system/syscall.c
+    system/ipc.c
+    system/ios.c
 
     graphics/video.c
     graphics/framebuffer.c
