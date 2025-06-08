@@ -3,9 +3,7 @@
 A list of things todo for myself
 
 ## Main
-1. Test and get heap working for libc.
-2. Implement interrupts.
-3. Get FreeRTOS going.
+1. Get more video modes supported.
 4. Add graphics API.
 5. Add more TODOs.
 

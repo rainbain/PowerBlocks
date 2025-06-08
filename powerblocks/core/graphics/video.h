@@ -33,6 +33,18 @@ typedef enum {
 } video_mode_t;
 
 /**
+ * @brief Gets the video mode of the console.
+ *
+ * Looks at the system settings to get the system video mode.
+ * 
+ * Must be called AFTER ios_initialize.
+ * 
+ * This function is unfinished. I need dumps of the other video modes.
+ * @return Default video mode.
+ */
+extern video_mode_t video_system_default_video_mode();
+
+/**
  * @brief Initializes the video output.
  *
  * Initializes the video interface with a given video mode.

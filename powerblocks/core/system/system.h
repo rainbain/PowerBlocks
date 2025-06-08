@@ -192,6 +192,13 @@
         SYSCALL_ASSERT(__LINE__, __FILE__); \
     }
 
+ /** @def ALIGN
+ *  @brief Add an alignment attribute to some data.
+ *
+ *  Used to make a variable memory aligned for hardware
+ */
+#define ALIGN(x) __attribute__((aligned(x)))
+
  /** @def SYSTEM_SWITCH_SP
  *  @brief Switches the stack pointer with pxCurrentTCB in a task switch.
  *

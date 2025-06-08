@@ -16,8 +16,9 @@
 
 #include "ios.h"
 
-#include "ipc.h"
 #include "system.h"
+#include "ipc.h"
+#include "ios_settings.h"
 
 #include <stdalign.h>
 #include <stddef.h>
@@ -33,6 +34,7 @@
 
 void ios_initialize() {
     ipc_initialize();
+    ios_settings_initialize();
 }
 
 int ios_open(const char* path, int mode) {

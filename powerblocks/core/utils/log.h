@@ -12,5 +12,7 @@
 
 #pragma once
 
-#define LOG_ERROR(tab, fmt, ...)
-#define LOG_INFO(tab, fmt, ...)
+#include <stdio.h>
+
+#define LOG_INFO(tab, fmt, ...) printf("[INFO] (%s) " fmt "\n", tab, ##__VA_ARGS__)
+#define LOG_ERROR(tab, fmt, ...) printf("[ERROR] (%s) " fmt "\n", tab, ##__VA_ARGS__)

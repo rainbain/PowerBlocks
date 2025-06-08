@@ -14,11 +14,14 @@
 
 #include "system/system.h"
 #include "system/exceptions.h"
+#include "system/ios_settings.h"
 
 #include "FreeRTOS.h"
 #include "semphr.h"
 
 #include "utils/log.h"
+
+#include <string.h>
 
 static const char* TAB = "VIDEO";
 
@@ -43,6 +46,8 @@ static const char* TAB = "VIDEO";
 #define VI_DI2  (*(volatile uint32_t*)0xCC002038)
 #define VI_DI3  (*(volatile uint32_t*)0xCC00203C)
 
+#define VI_DTV  (*(volatile uint32_t*)0xCC00206E)
+
 #define VI_DCR_ENABLE      (1<<0)
 #define VI_DCR_RESET       (1<<1)
 #define VI_DCR_PROGRESSIVE (1<<2)
@@ -50,6 +55,8 @@ static const char* TAB = "VIDEO";
 #define VI_DCR_LATCH_0(x)  (((x) & 0b11) << 4)
 #define VI_DCR_LATCH_1(x)  (((x) & 0b11) << 6)
 #define VI_DCR_FORMAT(x)   (((x) & 0b11) << 8)
+
+#define VI_DTV_GPIO_COMPONENT_CABLE (1<<0)
 
 #define VI_DCR_LATCH_OFF   0
 #define VI_DCR_LATCH_PAL   1
@@ -112,8 +119,6 @@ static const uint16_t VIDEO_Mode640X480NtsciYUV16[64] = {
     0x1313, 0x0F08, 0x0008, 0x0C0F, 0x00FF, 0x0000, 0x0001, 0x0001,
     0x0280, 0x807A, 0x019C, 0x00FF, 0x00FF, 0x00FF, 0x00FF, 0x00FF};
 
-
-
 static void video_irq_handler(exception_irq_type_t irq) {
     uint32_t display;
 
@@ -142,6 +147,51 @@ static void video_irq_handler(exception_irq_type_t irq) {
     xSemaphoreGiveFromISR(video_retrace_semaphore, &exception_isr_context_switch_needed);
 }
 
+video_mode_t video_system_default_video_mode() {
+    const char* tv_type = ios_settings_get("VIDEO");
+    bool is_progressive_scan = ios_config_is_progressive_scan();
+    bool uses_component_cable = VI_DTV = VI_DTV_GPIO_COMPONENT_CABLE;
+
+    if(tv_type == NULL) {
+        LOG_ERROR(TAB, "Failed to get TV type setting.\n");
+        return VIDEO_MODE_UNINITIALIZED;
+    }
+
+    bool use_progressive = is_progressive_scan && uses_component_cable;
+
+    // Very messy, my eyes hurt looking at this.
+    if(use_progressive) {
+        if(strcmp(tv_type, "NTSC") == 0) {
+            return VIDEO_MODE_640X480_NTSC_PROGRESSIVE;
+        } else if(strcmp(tv_type, "PAL") == 0) {
+            if(ios_config_is_eurgb60()) {
+                return VIDEO_MODE_640X480_PAL60;
+            } else {
+                return VIDEO_MODE_640X480_PAL50;
+            }
+        } else if(strcmp(tv_type, "MPAL") == 0) {
+            return VIDEO_MODE_640X480_PAL50;
+        } else {
+            LOG_ERROR(TAB, "Unknown TV type %s.", tv_type);
+            return VIDEO_MODE_UNINITIALIZED;
+        }
+    } else {
+        if(strcmp(tv_type, "NTSC") == 0) {
+            return VIDEO_MODE_640X480_NTSC_INTERLACED;
+        } else if(strcmp(tv_type, "PAL") == 0) {
+            if(ios_config_is_eurgb60()) {
+                return VIDEO_MODE_640X480_PAL60;
+            } else {
+                return VIDEO_MODE_640X480_PAL50;
+            }
+        } else if(strcmp(tv_type, "MPAL") == 0) {
+            return VIDEO_MODE_640X480_PAL50;
+        } else {
+            LOG_ERROR(TAB, "Unknown TV type %s.", tv_type);
+            return VIDEO_MODE_UNINITIALIZED;
+        }
+    }
+}
 
 void video_initialize(video_mode_t mode) {
     const uint16_t* vi_state;

@@ -12,6 +12,7 @@ add_library(
     system/syscall.c
     system/ipc.c
     system/ios.c
+    system/ios_settings.c
 
     graphics/video.c
     graphics/framebuffer.c
