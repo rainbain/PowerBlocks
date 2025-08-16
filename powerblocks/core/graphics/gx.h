@@ -33,6 +33,8 @@
 #define GX_WPAR_S32 (*(volatile int32_t*)GX_WPAR_ADDRESS)
 #define GX_WPAR_F32 (*(volatile float*)GX_WPAR_ADDRESS)
 
+#include "gx_immediate.h"
+
 // Vertex Data Type
 typedef enum {
     GX_VTXATTR_DATA_DISABLED,
