@@ -19,12 +19,23 @@ This project is licensed under the **MIT License**. See the `LICENSE` file for m
 
 ---
 
-### 2. **GCC - PowerPC Assembly Header (`ppc-asm.h`)**
+### 2. **GCC - Headers And Math Implementation**
 
 - **Source**: Part of GCC, provided along side Picolibc
 - **License**: GPLv3+ with GCC Runtime Library Exception v3.1
-- **Path**: `third_party/picolibc/ppc-asm.h`
+- **Path**: `third_party/picolibc` and `powerblocks/core/utils/math`
+- **Files**: `ppc-asm.h`, `arith64.c`
 - **Notes**: This file is licensed under the GPLv3+ with the GCC Runtime Library Exception. Redistribution is permitted when used as part of a runtime library.
+
+---
+
+### 2. **LLVM - Math Implementations**
+
+- **Source**: Part of GCC, provided along side Picolibc
+- **License**: Apache-2.0 WITH LLVM-exception
+- **Path**: `powerblocks/core/utils/math`
+- **Files**: `floatdidf.c` `int_endianness.h` `int_lib.h` `int_types.h` `int_util.h`
+- **Notes**: See https://llvm.org/LICENSE.txt for license information.
 
 ---
 
