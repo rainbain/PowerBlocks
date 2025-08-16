@@ -76,6 +76,7 @@ static video_mode_t video_mode = VIDEO_MODE_UNINITIALIZED;
 
 static StaticSemaphore_t video_retrace_semaphore_static;
 static SemaphoreHandle_t video_retrace_semaphore; 
+static video_retrace_callback_t video_retrace_callback;
 
 // VI States taken from BootMii
 /// TODO: BEFORE RELEASE - Make these dynamic.
@@ -119,6 +120,63 @@ static const uint16_t VIDEO_Mode640X480NtsciYUV16[64] = {
     0x1313, 0x0F08, 0x0008, 0x0C0F, 0x00FF, 0x0000, 0x0001, 0x0001,
     0x0280, 0x807A, 0x019C, 0x00FF, 0x00FF, 0x00FF, 0x00FF, 0x00FF};
 
+static const video_profile_t VIDEO_Profile640X480Ntsci = {
+    .width = 640,
+    .efb_height = 480,
+    .xfb_height = 480,
+
+    .copy_pattern = {
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+    },
+    .copy_filer = {0, 0, 21, 22, 21, 0, 0}
+    
+};
+
+static const video_profile_t VIDEO_Profile640X480Pal50 = {
+    .width = 640,
+    .efb_height = 480,
+    .xfb_height = 576,
+
+    .copy_pattern = {
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+    },
+    .copy_filer = {0, 0, 21, 22, 21, 0, 0}
+};
+
+static const video_profile_t VIDEO_Profile640X480Pal60 = {
+    .width = 640,
+    .efb_height = 480,
+    .xfb_height = 576,
+
+    .copy_pattern = {
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+    },
+    .copy_filer = {0, 0, 21, 22, 21, 0, 0}
+};
+
+static const video_profile_t VIDEO_Profile640X480Ntscp = {
+    .width = 640,
+    .efb_height = 480,
+    .xfb_height = 480,
+
+    .copy_pattern = {
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+        {6, 6}, {6, 6}, {6, 6},
+    },
+    .copy_filer = {0, 0, 21, 22, 21, 0, 0}
+};
+
 static void video_irq_handler(exception_irq_type_t irq) {
     uint32_t display;
 
@@ -145,6 +203,10 @@ static void video_irq_handler(exception_irq_type_t irq) {
 
     // Alert waiting task of vsync
     xSemaphoreGiveFromISR(video_retrace_semaphore, &exception_isr_context_switch_needed);
+
+    if(video_retrace_callback != NULL) {
+        video_retrace_callback();
+    }
 }
 
 video_mode_t video_system_default_video_mode() {
@@ -193,6 +255,22 @@ video_mode_t video_system_default_video_mode() {
     }
 }
 
+const video_profile_t* video_get_profile(video_mode_t mode) {
+    switch(mode) {
+        case VIDEO_MODE_640X480_NTSC_INTERLACED:
+            return &VIDEO_Profile640X480Ntsci;
+        case VIDEO_MODE_640X480_NTSC_PROGRESSIVE:
+            return &VIDEO_Profile640X480Ntscp;
+        case VIDEO_MODE_640X480_PAL50:
+            return &VIDEO_Profile640X480Pal50;
+        case VIDEO_MODE_640X480_PAL60:
+            return &VIDEO_Profile640X480Pal60;
+        default:
+            LOG_ERROR(TAB, "Invalid video mode %d", mode);
+            return NULL;
+    }
+}
+
 void video_initialize(video_mode_t mode) {
     const uint16_t* vi_state;
 
@@ -202,6 +280,9 @@ void video_initialize(video_mode_t mode) {
     // Enter safe mode when initializing hardware.
     uint32_t irq_enabled;
     SYSTEM_DISABLE_ISR(irq_enabled);
+
+    // Clear callback
+    video_retrace_callback = NULL;
 
     switch(mode) {
         case VIDEO_MODE_640X480_NTSC_INTERLACED:
@@ -293,4 +374,8 @@ void video_wait_vsync() {
 void video_wait_vsync_int() {
     while(VI_DPV >= 200);
     while(VI_DPV < 200);
+}
+
+void video_set_retrace_callback(video_retrace_callback_t callback) {
+    video_retrace_callback = callback;
 }

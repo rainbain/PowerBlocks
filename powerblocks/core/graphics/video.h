@@ -33,6 +33,32 @@ typedef enum {
 } video_mode_t;
 
 /**
+ * @enum video_profile_t
+ * @brief Holds information about a video mode
+ *
+ * Holds information about a specific video mode like XFB and EFB
+ * width and hight.
+ */
+typedef struct {
+    uint16_t width;
+    uint16_t efb_height;
+    uint16_t xfb_height;
+
+    uint8_t copy_pattern[12][2];
+    uint8_t copy_filer[7];
+} video_profile_t;
+
+/**
+ * @typedef video_retrace_callback_t
+ * @brief Called at the begining of the video retrace.
+ *
+ * Usually used to set off a pixel engine copy into the frame buffer
+ * so that you dont get artifacts while copying.
+ */
+typedef void (*video_retrace_callback_t)();
+
+
+/**
  * @brief Gets the video mode of the console.
  *
  * Looks at the system settings to get the system video mode.
@@ -43,6 +69,14 @@ typedef enum {
  * @return Default video mode.
  */
 extern video_mode_t video_system_default_video_mode();
+
+/**
+ * @brief Gets a video profile from a video mode.
+ *
+ * Get a video profile from a video mode.
+ * @param profile Mode to set into.
+ */
+extern const video_profile_t* video_get_profile(video_mode_t mode);
 
 /**
  * @brief Initializes the video output.
@@ -87,3 +121,13 @@ extern void video_wait_vsync();
  * May or may not be an emulator thing.
  */
 extern void video_wait_vsync_int();
+
+/**
+ * @brief Sets the retrace callback.
+ *
+ * This is called from the interrupt handler for the retrace from the video interface.
+ * Make sure to handle code coming from an interrupter appropriately.
+ * 
+ * @param callback Function pointer to call on retrace.
+ */
+extern void video_set_retrace_callback(video_retrace_callback_t callback);

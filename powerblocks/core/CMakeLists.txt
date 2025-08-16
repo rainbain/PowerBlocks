@@ -16,11 +16,15 @@ add_library(
 
     graphics/video.c
     graphics/framebuffer.c
+    graphics/gx.c
 
     utils/fonts.c
     utils/console.c
     utils/crash_handler.c
     utils/math/arith64.c
+    utils/math/floatdidf.c
+    utils/math/matrix4.c
+    utils/math/matrix34.c
 
     freertos_port/port.c
     ${FREERTOS_PATH}/tasks.c

@@ -25,7 +25,7 @@ static inline uint8_t clamp(int val) {
     return (uint8_t)((val < 0) ? 0 : (val > 255 ? 255 : val));
 }
 
-void video_framebuffer_copy_rgba_into(framebuffer_t* framebuffer, const uint32_t *rgba, vec2i position, vec2i size) {
+void framebuffer_copy_rgba_into(framebuffer_t* framebuffer, const uint32_t *rgba, vec2i position, vec2i size) {
     // General protection functions.
     // Its good to keep these safe so that future operations can
     // use them willy-nilly.
@@ -295,7 +295,7 @@ void framebuffer_put_text(framebuffer_t* framebuffer, uint32_t foreground, uint3
             }
         }
 
-        video_framebuffer_copy_rgba_into(framebuffer, (const uint32_t*)glyph, position, character_size);
+        framebuffer_copy_rgba_into(framebuffer, (const uint32_t*)glyph, position, character_size);
 
         position.x += character_size.x;
 
