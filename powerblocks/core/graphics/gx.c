@@ -427,7 +427,8 @@ void gx_initialize_state() {
     gx_set_clamp_mode(GX_CLAMP_MODE_TOP_BOTTOM);
     gx_set_gamma(GX_GAMMA_1_0);
     gx_set_line_mode(GX_LINE_MODE_PROGRESSIVE);
-    gx_set_copy_color(0x00000000, 0xFFFFFF);
+    gx_set_clear_color(0, 0, 0, 0);
+    gx_set_clear_z(0xFFFFFF);
 }
 
 void gx_initialize_video(const video_profile_t* video_profile) {
@@ -770,13 +771,12 @@ void gx_draw_done() {
     xSemaphoreTake(gx_pe_finish_semaphore, portMAX_DELAY);
 }
 
-void gx_set_copy_color(uint32_t color, uint32_t z) {
-    uint32_t r = (color >> 24) & 0xFF;
-    uint32_t g = (color >> 16) & 0xFF;
-    uint32_t b = (color >> 8)  & 0xFF;
-    uint32_t a = (color >> 0)  & 0xFF;
+void gx_set_clear_color(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     GX_WPAR_BP_LOAD(GX_BP_REGISTERS_PE_COPY_CLEAR_AR | (a << 8) | r);
     GX_WPAR_BP_LOAD(GX_BP_REGISTERS_PE_COPY_CLEAR_GB | (g << 8) | b);
+}
+
+void gx_set_clear_z(uint32_t z) {
     GX_WPAR_BP_LOAD(GX_BP_REGISTERS_PE_COPY_CLEAR_Z | (z & 0xFFFFFF));
 }
 

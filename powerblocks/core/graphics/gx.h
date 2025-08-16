@@ -530,11 +530,21 @@ extern void gx_draw_done();
  * As the framebuffer is copied, it clears the EFB back with these colors
  * and Z value.
  * 
+ * @param r Red Channel
+ * @param g Green Channel
+ * @param b Blue Channel
+ * @param a Alpha Channel
+ */
+extern void gx_set_clear_color(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
+/**
+ * @brief Sets the z value the frame buffer is cleared with.
  * 
- * @param color RGBA color
+ * As the frame buffer gets copied, it is cleared with this.
+ * 
  * @param z Z value, usually the max of 0xFFFFFF (24 bits)
  */
-extern void gx_set_copy_color(uint32_t color, uint32_t z);
+extern void gx_set_clear_z(uint32_t z);
 
 /**
  * @brief Sets the scale of the EFB to the XFB's Y
