@@ -1,5 +1,5 @@
 # PowerBlocks SDK
-PowerBlocks is a fully independent SDK for Wii homebrew development designed from the ground up. It does not aim to serve as a direct stand in but offers the functionality needed for homebrew projects.
+PowerBlocks is a fully independent SDK for Wii homebrew development.
 
 This project is currently deep within development. Please feel free to contribute and check out CONTRIBUTING.md.
 
@@ -19,8 +19,10 @@ Supported:
 
 Work In Progress:
  1. Graphics
- 2. WiiMote Support
- 3. SDIO + File System Support
- 4. Audio Interface
- 5. Disk Interface
- 6. WiFi Support
+
+Not Started Yet:
+ 1. WiiMote Support
+ 2. SDIO + File System Support
+ 3. Audio Interface
+ 4. Disk Interface
+ 5. WiFi Support
