@@ -210,6 +210,12 @@ is_null_\@:
     lwz 0, 0xBC(1)
     mtspr 919, 0
 
+    # Unlike on the save,
+    # Do this before loading back the floats
+    # (or else...) Totally not a mistake I made
+    lfd 0, 0x1C0(1)
+    mtfsf 255, 0
+
     # Restore Floats
     lfd 0, 0xC0(1)
     lfd 1, 0xC8(1)
@@ -243,9 +249,6 @@ is_null_\@:
     lfd 29, 0x1A8(1)
     lfd 30, 0x1B0(1)
     lfd 31, 0x1B8(1)
-
-    lfd 0, 0x1C0(1)
-    mtfsf 255, 0
 
     # Restore r0
     lwz 0, 0x04(1)
