@@ -30,6 +30,6 @@ add_compile_options(
 )
 
 # Compiler flags
-# The magic -D thing is to fix __FILE__ paths to not be absolute.
-set(CMAKE_C_FLAGS "-mcpu=750 -ffreestanding -nostdlib -I${CMAKE_CURRENT_LIST_DIR} ${EXTRA_C_FLAGS}")
+message("${TOOLCHAIN_DIR}")
+set(CMAKE_C_FLAGS "-fmacro-prefix-map=${TOOLCHAIN_DIR}= -mcpu=750 -ffreestanding -nostdlib -I${CMAKE_CURRENT_LIST_DIR} ${EXTRA_C_FLAGS}")
 set(CMAKE_ASM_FLAGS "-I${CMAKE_CURRENT_LIST_DIR} ${EXTRA_C_FLAGS} -Qunused-arguments")
