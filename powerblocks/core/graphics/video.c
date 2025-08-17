@@ -125,14 +125,15 @@ static const video_profile_t VIDEO_Profile640X480Ntsci = {
     .efb_height = 480,
     .xfb_height = 480,
 
-    .copy_pattern = {
+    .copy_pattern = { // 3x MSAA pattern
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
     },
-    .copy_filer = {0, 0, 21, 22, 21, 0, 0}
-    
+    .copy_filer = {   0, 0,    // Top Row
+                   21, 22, 21, // Middle Row (Slandered Deflikering Pattern)
+                      0, 0}    // Bottom Row  
 };
 
 static const video_profile_t VIDEO_Profile640X480Pal50 = {
@@ -140,13 +141,15 @@ static const video_profile_t VIDEO_Profile640X480Pal50 = {
     .efb_height = 480,
     .xfb_height = 576,
 
-    .copy_pattern = {
+    .copy_pattern = { // 3x MSAA pattern
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
     },
-    .copy_filer = {0, 0, 21, 22, 21, 0, 0}
+    .copy_filer = {   0, 0,    // Top Row
+                   21, 22, 21, // Middle Row (Slandered Deflikering Pattern)
+                      0, 0}    // Bottom Row
 };
 
 static const video_profile_t VIDEO_Profile640X480Pal60 = {
@@ -154,13 +157,15 @@ static const video_profile_t VIDEO_Profile640X480Pal60 = {
     .efb_height = 480,
     .xfb_height = 576,
 
-    .copy_pattern = {
+    .copy_pattern = { // 3x MSAA pattern
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
     },
-    .copy_filer = {0, 0, 21, 22, 21, 0, 0}
+    .copy_filer = {   0, 0,    // Top Row
+                   21, 22, 21, // Middle Row (Slandered Deflikering Pattern)
+                      0, 0}    // Bottom Row
 };
 
 static const video_profile_t VIDEO_Profile640X480Ntscp = {
@@ -168,13 +173,15 @@ static const video_profile_t VIDEO_Profile640X480Ntscp = {
     .efb_height = 480,
     .xfb_height = 480,
 
-    .copy_pattern = {
+    .copy_pattern = { // 3x MSAA pattern
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
         {6, 6}, {6, 6}, {6, 6},
     },
-    .copy_filer = {0, 0, 21, 22, 21, 0, 0}
+    .copy_filer = {   0, 0,    // Top Row
+                   21, 22, 21, // Middle Row (Slandered Deflikering Pattern)
+                      0, 0}    // Bottom Row
 };
 
 static void video_irq_handler(exception_irq_type_t irq) {

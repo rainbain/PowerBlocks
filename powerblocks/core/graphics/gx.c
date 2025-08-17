@@ -440,6 +440,12 @@ void gx_initialize_video(const video_profile_t* video_profile) {
 }
 
 void gx_fifo_create(gx_fifo_t* fifo, void* fifo_buffer, uint32_t fifo_buffer_size) {
+    // Clear that thing
+    memset(fifo_buffer, 0, fifo_buffer_size);
+
+    // Really clear that thing
+    system_flush_dcache(fifo_buffer, fifo_buffer_size);
+    
     fifo->base_address = SYSTEM_MEM_PHYSICAL(fifo_buffer);
     fifo->end_address = fifo->base_address + fifo_buffer_size - 4;
     fifo->high_watermark = 0;
@@ -810,7 +816,7 @@ void gx_set_scissor_offset(int32_t x, int32_t y) {
 
 void gx_set_copy_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t xfb_width) {
     gx_state.bp_efb_top_left = (y << 10) | y;
-    gx_state.bp_efb_width_height = ((height-1) << 10) | width;
+    gx_state.bp_efb_width_height = ((height-1) << 10) | (width-1);
     gx_state.bp_xfb_width_stride = width / 16;
 }
 
@@ -827,28 +833,29 @@ void gx_set_line_mode(gx_line_mode_t line_mode) {
 }
 
 void gx_set_copy_filter(const uint8_t pattern[12][2], const uint8_t filter[7]) {
-    // I must admit, I do not know why there put in here in this way.
-    // I had to learn this from libogc. Maybe theres a more reasonable way of writing this
-    /// TODO: Document why its this way, and more on copy filter in general.
-    GX_WPAR_BP_LOAD(GX_BP_REGISTERS_COPY_FILTER_POS_A | (pattern[0][1] << 4)
+    GX_WPAR_BP_LOAD(GX_BP_REGISTERS_COPY_FILTER_POS_A | (pattern[0][0] << 0)
+                                                      | (pattern[0][1] << 4)
                                                       | (pattern[1][0] << 8)
                                                       | (pattern[1][1] << 12)
                                                       | (pattern[2][0] << 16)
                                                       | (pattern[2][1] << 20));
     
-    GX_WPAR_BP_LOAD(GX_BP_REGISTERS_COPY_FILTER_POS_B | (pattern[3][1] << 4)
+    GX_WPAR_BP_LOAD(GX_BP_REGISTERS_COPY_FILTER_POS_B | (pattern[3][0] << 0)
+                                                      | (pattern[3][1] << 4)
                                                       | (pattern[4][0] << 8)
                                                       | (pattern[4][1] << 12)
                                                       | (pattern[5][0] << 16)
                                                       | (pattern[5][1] << 20));
     
-    GX_WPAR_BP_LOAD(GX_BP_REGISTERS_COPY_FILTER_POS_C | (pattern[6][1] << 4)
+    GX_WPAR_BP_LOAD(GX_BP_REGISTERS_COPY_FILTER_POS_C | (pattern[6][0] << 0)
+                                                      | (pattern[6][1] << 4)
                                                       | (pattern[7][0] << 8)
                                                       | (pattern[7][1] << 12)
                                                       | (pattern[8][0] << 16)
                                                       | (pattern[8][1] << 20));
     
-    GX_WPAR_BP_LOAD(GX_BP_REGISTERS_COPY_FILTER_POS_D | (pattern[9][1] << 4)
+    GX_WPAR_BP_LOAD(GX_BP_REGISTERS_COPY_FILTER_POS_D | (pattern[9][0] << 0)
+                                                      | (pattern[9][1] << 4)
                                                       | (pattern[10][0] << 8)
                                                       | (pattern[10][1] << 12)
                                                       | (pattern[11][0] << 16)

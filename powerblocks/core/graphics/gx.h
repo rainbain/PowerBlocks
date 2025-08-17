@@ -629,17 +629,24 @@ extern void gx_set_line_mode(gx_line_mode_t line_mode);
  * @brief Sets the interpolation filters used when copying the frame buffer
  * into external frame buffers of differing resolutions.
  * 
- * I will need to document more on how exactly these filters behave,
+ * This is a grid of values that determines how pixels are sampled
+ * when copying frame buffer.
  * 
- * But form was pattern is an array of X, Y positions. 12 of them.
- * Each one is between 1-11. The middle of the pixel is 6. An array
- * of all 6es is the default and there is no interpolation.
+ * For normal video modes you dont need to touch this.
  * 
- * filter is the array of ceoffenents. Like a kernel, the values should sum
- * to 64. The default when interpolation is not needed, native,
- * it is 0, 0, 21, 22, 21, 0, 0
- * Though it seems this can substantially change with some video modes.
+ * For the X,Y pattern,
+ * Each one is between 0-12. The middle of the pixel is 6 (ish).
+ * These are for 3x MSAA generation.
  * 
+ * filter is the array of ceoffenents between 0 and 63.
+ * Thats a Q0:6 fixed point format. And they should sum to 1
+ * to keep normal brightness
+ * 
+ * The first 2 values are the top row.
+ * Then the next 3 are the middle row
+ * Last 2 are the bottom row.
+ * 
+ * Standard deflikering pattern is 0.25, 0.5, 0.25.
  * @param pattern Pixel position for the filter.
  * @param filter Ceoffenents for the filter.
  */
