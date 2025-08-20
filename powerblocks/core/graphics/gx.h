@@ -15,9 +15,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "powerblocks/core/utils/math/matrix4.h"
-#include "powerblocks/core/utils/math/matrix34.h"
-
 #include "framebuffer.h"
 #include "video.h"
 
@@ -33,6 +30,7 @@
 #define GX_WPAR_S32 (*(volatile int32_t*)GX_WPAR_ADDRESS)
 #define GX_WPAR_F32 (*(volatile float*)GX_WPAR_ADDRESS)
 
+#include "gx_xf.h"
 #include "gx_immediate.h"
 
 // Vertex Data Type
@@ -107,19 +105,6 @@ typedef enum {
     GX_TRIANGLES = 0x90,
     GX_TRIANGLE_STRIP = 0x98
 } gx_primitive_t;
-
-typedef enum { // Just their addresses/offset in XF memory for position and normal matrices.
-    GX_PSNMTX_0 = (12*0),
-    GX_PSNMTX_1 = (12*1),
-    GX_PSNMTX_2 = (12*2),
-    GX_PSNMTX_3 = (12*3),
-    GX_PSNMTX_4 = (12*4),
-    GX_PSNMTX_5 = (12*5),
-    GX_PSNMTX_6 = (12*6),
-    GX_PSNMTX_7 = (12*7),
-    GX_PSNMTX_8 = (12*8),
-    GX_PSNMTX_9 = (12*9)
-} gx_psnmtx_idx;
 
 typedef enum {
     GX_COMPARE_NEVER,
@@ -325,58 +310,6 @@ extern void gx_fifo_set(const gx_fifo_t* fifo);
 extern void gx_fifo_get(gx_fifo_t* fifo);
 
 /**
- * @brief Sets the Viewport
- *
- * Set the viewport in the XF registers.
- * This is needed to scale geometry to the screen.
- * It also handles scaling Z buffer.
- * 
- * @param x Top Left of the Screen Position
- * @param y Top Left of the Screen Position
- * @param width Width of the Screen
- * @param height Height of the Screen
- * @param near Closest Z values to not be culled
- * @param far Farthest Z values to not be culled
- * @param jitter Will shift up the X a bit. Can reduce blur/flickering in interlaced mode. This is usually true.
- */
-extern void gx_set_viewport(float x, float y, float width, float height, float near, float far, bool jitter);
-
-/**
- * @brief Sets the Projection Matrix
- * 
- * Sets the projection matrix in the XF registers
- * that is used when transforming vertices.
- * 
- * @param mtx 4x4 Projection Matrix
- * @param is_perspective If the matrix is perspective, or orthographic. 
-*/
-extern void gx_set_projection(const matrix4 mtx, bool is_perspective);
-
-/**
- * @brief Load a position matrix in the XF matrix stack
- * 
- * You then can set this with gx_set_psn_matrix or with matrix indices in vertex attributes.
- * 
- * @param mtx The matrix to load
- * @param index The index of the matrix in the matrix stack.
- */
-extern void gx_load_psn_matrix(const matrix34 mtx, gx_psnmtx_idx index);
-
-/**
- * @brief Sets the current pair of position and normal matrices.
- * 
- * 10 matrices can be set in the XF, set with functions like gx_set_projection.
- * 
- * This will set the current one to use, if matrix indices are not enabled in the vertex descriptor.
- * If they are, this will be overriden.
- * 
- * This value will be flushed on the next draw call.
- * 
- * Cleared to zero by gx_initialize()
- */
-extern void gx_set_psn_matrix(gx_psnmtx_idx index);
-
-/**
  * @brief Flushes all commands to the command processor.
  *
  * This inserts 32 NOP commands into the write gather pipeline to make sure
@@ -468,22 +401,6 @@ extern void gx_vtxfmtattr_clear(uint8_t attribute_index);
  * @param fraction Number of fractional bits in fixed point values. That is, inititer formats like S16, will be divided by 2^fraction. 0-31
  */
 extern void gx_vtxfmtattr_set(uint8_t attribute_index, gx_vtxdesc_t attribute, gx_vtxattr_component_t component, gx_vtxattr_component_format_t fmt, uint8_t fraction);
-
-/**
- * @brief Sets a color channel count
- *
- * The vertex descriptors contain how many colors are passed to the XF.
- * This controls how many of those colors are passed to the BP/TEV from the XF.
- * 
- * These colors will be rasterized and interpolated.
- * 
- * Hardware supports 0-2 colors.
- * Fun Fact: I hear the Nintendo SDK only supports 1, I cant imagine thats true though
- * Maybe just for model formats or something.
- * 
- * @param count Number of color channels to supply the BP/TEV
- */
-extern void gx_set_color_channels(uint32_t count);
 
 /**
  * @brief Set a texture coord count

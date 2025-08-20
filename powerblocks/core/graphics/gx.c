@@ -226,6 +226,8 @@ static struct {
     uint32_t vat_tables[3][8]; // 3 sets, 8 formats.
     uint32_t normals;   // Normal settings, 0: none, 1: 1 normal, 2: NBT (3)
     uint32_t genmode; // Stores the color and texcoord settings to be passed from XF to BP/TEV
+    uint32_t xf_color_settings[4]; // Updated with genmode.
+
     uint32_t bp_efb_top_left; // Frame buffer copy settings
     uint32_t bp_efb_width_height;
     uint32_t bp_xfb_width_stride;
@@ -286,10 +288,10 @@ static void gx_flush_xf_color_settings() {
 
     // For now load default color mode. no lighting
     GX_WPAR_XF_LOAD(GX_XF_REGISTER_COLOR_CONTROL, 4);
-    GX_WPAR_U32 = 0x01;
-    GX_WPAR_U32 = 0x01;
-    GX_WPAR_U32 = 0x01;
-    GX_WPAR_U32 = 0x01;
+    GX_WPAR_U32 = gx_state.xf_color_settings[0];
+    GX_WPAR_U32 = gx_state.xf_color_settings[1];
+    GX_WPAR_U32 = gx_state.xf_color_settings[2];
+    GX_WPAR_U32 = gx_state.xf_color_settings[3];
 }
 
 static void gx_flush_texcoord_settings() {
@@ -359,6 +361,9 @@ static void gx_flush_state() {
 }
 
 void gx_initialize(const gx_fifo_t* fifo, const video_profile_t* video_profile) {
+    // Disconnect pipelines while we work on them
+    CP_CONTROL = 0;
+    
     // Clear State registers to zero
     // This should be set later on, just need to make sure!
     memset(&gx_state, 0, sizeof(gx_state));
@@ -413,11 +418,25 @@ void gx_initialize_state() {
     gx_set_color_channels(0);
     gx_set_texcoord_channels(0);
 
-    // Default PE state
-    gx_state.z_mode = 0;
-    gx_state.c_mode_0 = 0;
-    gx_state.c_mode_1 = 0;
-    gx_state.pe_control = 0;
+    // Default XF Lighting
+    gx_light_t empty;
+    memset(&empty, 0, sizeof(empty));
+    gx_configure_color_channel(GX_COLOR_CHANNEL_COLOR0, 0, false, true, true, GX_DIFFUSE_MODE_NONE, GX_ATTENUATION_MODE_NONE);
+    gx_configure_color_channel(GX_COLOR_CHANNEL_COLOR1, 0, false, true, true, GX_DIFFUSE_MODE_NONE, GX_ATTENUATION_MODE_NONE);
+    gx_configure_color_channel(GX_COLOR_CHANNEL_ALPHA0, 0, false, true, true, GX_DIFFUSE_MODE_NONE, GX_ATTENUATION_MODE_NONE);
+    gx_configure_color_channel(GX_COLOR_CHANNEL_ALPHA1, 0, false, true, true, GX_DIFFUSE_MODE_NONE, GX_ATTENUATION_MODE_NONE);
+    gx_flash_light(GX_LIGHT_ID_0, &empty);
+    gx_flash_light(GX_LIGHT_ID_1, &empty);
+    gx_flash_light(GX_LIGHT_ID_2, &empty);
+    gx_flash_light(GX_LIGHT_ID_3, &empty);
+    gx_flash_light(GX_LIGHT_ID_4, &empty);
+    gx_flash_light(GX_LIGHT_ID_5, &empty);
+    gx_flash_light(GX_LIGHT_ID_6, &empty);
+    gx_flash_light(GX_LIGHT_ID_7, &empty);
+    gx_flash_xf_color(GX_XF_COLOR_AMBIENT_0, 0, 0, 0, 255);
+    gx_flash_xf_color(GX_XF_COLOR_AMBIENT_1, 0, 0, 0, 255);
+    gx_flash_xf_color(GX_XF_COLOR_MATERIAL_0, 0, 0, 0, 255);
+    gx_flash_xf_color(GX_XF_COLOR_MATERIAL_1, 0, 0, 0, 255);
 
     // Default PE setup
     gx_set_z_mode(true, GX_COMPARE_LESS_EQUAL, true); // Z filtering? YES
@@ -432,7 +451,7 @@ void gx_initialize_state() {
 }
 
 void gx_initialize_video(const video_profile_t* video_profile) {
-    gx_set_viewport(0.0f, 0.0f, video_profile->width, video_profile->efb_height, 0.0f, 1.0f, true);
+    gx_flash_viewport(0.0f, 0.0f, video_profile->width, video_profile->efb_height, 0.0f, 1.0f, true);
     gx_set_copy_y_scale((float)video_profile->xfb_height / (float)video_profile->efb_height);
     gx_set_scissor_rectangle(0, 0, video_profile->width, video_profile->efb_height);
     gx_set_copy_window(0, 0, video_profile->width, video_profile->efb_height, video_profile->width);
@@ -491,66 +510,6 @@ void gx_fifo_get(gx_fifo_t* fifo) {
     fifo->write_head = (CP_FIFO_WRITE_HEAD_HIGH << 16) | CP_FIFO_WRITE_HEAD_LOW;
     fifo->read_head = (CP_FIFO_READ_HEAD_HIGH << 16) | CP_FIFO_READ_HEAD_LOW;
     fifo->breakpoint = (CP_FIFO_BREAKPOINT_HIGH << 16) | CP_FIFO_BREAKPOINT_LOW;
-}
-
-void gx_set_viewport(float x, float y, float width, float height, float near, float far, bool jitter) {
-    // Offset y origin by a sub pixel if jitter
-    if(jitter) {
-        y -= 0.5f;
-    }
-    
-    float sx = width / 2.0f; // Scale X to 1/2 the width
-    float sy = (-height) / 2.0f; // Scale Y to 1/2 and flip
-
-    // Center 0,0 into center of viewport
-    float px = x + (width / 2.0f) + 342.0f;
-    float py = y + (height / 2.0f) + 342.0f;
-
-    // Normalize Z values between near and far, then scale into the 24 bit depth buffer
-    float zFar = far * (float)((1 << 24) - 1);
-    float zRange = (far - near) * (float)((1 << 24) - 1);
-
-    // Load values onto XF
-    GX_WPAR_XF_LOAD(GX_XF_REGISTER_VIEWPORT, 6);
-    GX_WPAR_F32 = sx;
-    GX_WPAR_F32 = sy;
-    GX_WPAR_F32 = zRange;
-    GX_WPAR_F32 = px;
-    GX_WPAR_F32 = py;
-    GX_WPAR_F32 = zFar;
-}
-
-void gx_set_projection(const matrix4 mtx, bool is_perspective) {
-    GX_WPAR_XF_LOAD(GX_XF_REGISTER_PROJECTION, 7);
-    GX_WPAR_F32 = mtx[0][0];
-    GX_WPAR_F32 = is_perspective ? mtx[0][2] : mtx[0][3];
-    GX_WPAR_F32 = mtx[1][1];
-    GX_WPAR_F32 = is_perspective ? mtx[1][2] : mtx[1][3];
-    GX_WPAR_F32 = mtx[2][2];
-    GX_WPAR_F32 = mtx[2][3];
-    GX_WPAR_U32 = is_perspective ? 0 : 1;
-}
-
-void gx_load_psn_matrix(const matrix34 mtx, gx_psnmtx_idx index) {
-    GX_WPAR_XF_LOAD((uint32_t)index, 12);
-    GX_WPAR_F32 = mtx[0][0];
-    GX_WPAR_F32 = mtx[0][1];
-    GX_WPAR_F32 = mtx[0][2];
-    GX_WPAR_F32 = mtx[0][3];
-    GX_WPAR_F32 = mtx[1][0];
-    GX_WPAR_F32 = mtx[1][1];
-    GX_WPAR_F32 = mtx[1][2];
-    GX_WPAR_F32 = mtx[1][3];
-    GX_WPAR_F32 = mtx[2][0];
-    GX_WPAR_F32 = mtx[2][1];
-    GX_WPAR_F32 = mtx[2][2];
-    GX_WPAR_F32 = mtx[2][3];
-}
-
-void gx_set_psn_matrix(gx_psnmtx_idx index) {
-    gx_state.matrix_index_a &= ~MTXINDX_A_PSN(0b111111);
-    gx_state.matrix_index_a |= MTXINDX_A_PSN((uint32_t)index / 4); // Addressed by row.
-    gx_state.dirty |= GX_DIRTY_MATRIX_INDEX_NEEDS_UPDATE;
 }
 
 void gx_flush() {
@@ -744,11 +703,6 @@ void gx_vtxfmtattr_set(uint8_t attribute_index, gx_vtxdesc_t attribute, gx_vtxat
         gx_state.vat_tables[2][attribute_index] = vat_c;
         gx_state.dirty |= GX_DIRTY_VAT_FMT_NEEDS_UPDATE(attribute_index);
     }
-}
-
-void gx_set_color_channels(uint32_t count) {
-    gx_state.genmode = (gx_state.genmode & ~BP_GENMODE_NCOL(0x1F)) | BP_GENMODE_NCOL(count);
-    gx_state.dirty |= GX_DIRTY_BP_GENMODE_NEEDS_UPDATE | GX_DIRTY_XF_COLORS_NEEDS_UPDATE;
 }
 
 void gx_set_texcoord_channels(uint32_t count) {
@@ -965,4 +919,132 @@ void gx_copy_framebuffer(framebuffer_t* framebuffer, bool clear) {
     if(pe_control_dirty) {
         GX_WPAR_BP_LOAD(GX_BP_REGISTERS_PE_CONTROL | gx_state.pe_control);
     }
+}
+
+/* -------------------XF Matrix Control--------------------- */
+
+void gx_flash_viewport(float x, float y, float width, float height, float near, float far, bool jitter) {
+    // Offset y origin by a sub pixel if jitter
+    if(jitter) {
+        y -= 0.5f;
+    }
+    
+    float sx = width / 2.0f; // Scale X to 1/2 the width
+    float sy = (-height) / 2.0f; // Scale Y to 1/2 and flip
+
+    // Center 0,0 into center of viewport
+    float px = x + (width / 2.0f) + 342.0f;
+    float py = y + (height / 2.0f) + 342.0f;
+
+    // Normalize Z values between near and far, then scale into the 24 bit depth buffer
+    float zFar = far * (float)((1 << 24) - 1);
+    float zRange = (far - near) * (float)((1 << 24) - 1);
+
+    // Load values onto XF
+    GX_WPAR_XF_LOAD(GX_XF_REGISTER_VIEWPORT, 6);
+    GX_WPAR_F32 = sx;
+    GX_WPAR_F32 = sy;
+    GX_WPAR_F32 = zRange;
+    GX_WPAR_F32 = px;
+    GX_WPAR_F32 = py;
+    GX_WPAR_F32 = zFar;
+}
+
+void gx_flash_projection(const matrix4 mtx, bool is_perspective) {
+    GX_WPAR_XF_LOAD(GX_XF_REGISTER_PROJECTION, 7);
+    GX_WPAR_F32 = mtx[0][0];
+    GX_WPAR_F32 = is_perspective ? mtx[0][2] : mtx[0][3];
+    GX_WPAR_F32 = mtx[1][1];
+    GX_WPAR_F32 = is_perspective ? mtx[1][2] : mtx[1][3];
+    GX_WPAR_F32 = mtx[2][2];
+    GX_WPAR_F32 = mtx[2][3];
+    GX_WPAR_U32 = is_perspective ? 0 : 1;
+}
+
+void gx_flash_pos_matrix(const matrix34 mtx, gx_psnmtx_idx index) {
+    GX_WPAR_XF_LOAD((uint32_t)index * 4, 12);
+    GX_WPAR_F32 = mtx[0][0];
+    GX_WPAR_F32 = mtx[0][1];
+    GX_WPAR_F32 = mtx[0][2];
+    GX_WPAR_F32 = mtx[0][3];
+    GX_WPAR_F32 = mtx[1][0];
+    GX_WPAR_F32 = mtx[1][1];
+    GX_WPAR_F32 = mtx[1][2];
+    GX_WPAR_F32 = mtx[1][3];
+    GX_WPAR_F32 = mtx[2][0];
+    GX_WPAR_F32 = mtx[2][1];
+    GX_WPAR_F32 = mtx[2][2];
+    GX_WPAR_F32 = mtx[2][3];
+}
+
+void gx_flash_nrm_matrix(const matrix3 mtx, gx_psnmtx_idx index) {
+    GX_WPAR_XF_LOAD(0x0400 + (uint32_t)index * 3, 9);
+    GX_WPAR_F32 = mtx[0][0];
+    GX_WPAR_F32 = mtx[0][1];
+    GX_WPAR_F32 = mtx[0][2];
+    GX_WPAR_F32 = mtx[1][0];
+    GX_WPAR_F32 = mtx[1][1];
+    GX_WPAR_F32 = mtx[1][2];
+    GX_WPAR_F32 = mtx[2][0];
+    GX_WPAR_F32 = mtx[2][1];
+    GX_WPAR_F32 = mtx[2][2];
+}
+
+void gx_set_current_psn_matrix(gx_psnmtx_idx index) {
+    gx_state.matrix_index_a &= ~MTXINDX_A_PSN(0b111111);
+    gx_state.matrix_index_a |= MTXINDX_A_PSN((uint32_t)index); // Addressed by row.
+    gx_state.dirty |= GX_DIRTY_MATRIX_INDEX_NEEDS_UPDATE;
+}
+
+
+/* -------------------XF Color Control--------------------- */
+
+void gx_set_color_channels(uint32_t count) {
+    gx_state.genmode = (gx_state.genmode & ~BP_GENMODE_NCOL(0x1F)) | BP_GENMODE_NCOL(count);
+    gx_state.dirty |= GX_DIRTY_BP_GENMODE_NEEDS_UPDATE | GX_DIRTY_XF_COLORS_NEEDS_UPDATE;
+}
+
+void gx_configure_color_channel(gx_color_channel_t channel, gx_light_bit_t lights,
+                                bool lighting, bool ambient_source, bool material_source,
+                                gx_diffuse_mode_t diffuse, gx_attenuation_mode_t attenuation) {
+    
+    uint32_t channel_config = lights;
+
+    if(lighting) // Enable lighting if you please.
+        channel_config |= (1<<1);
+    if(ambient_source) // Enable ambiant from vertex color
+        channel_config |= (1<<6);
+    if(material_source) // Enable material from vertex color
+        channel_config |= (1<<0);
+    
+    channel_config |= diffuse << 7;
+    channel_config |= attenuation << 9;
+
+    gx_state.xf_color_settings[channel] = channel_config;
+    gx_state.dirty |= GX_DIRTY_XF_COLORS_NEEDS_UPDATE;
+}
+
+void gx_flash_xf_color(gx_xf_color_t id, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    GX_WPAR_XF_LOAD(id, 1);
+    GX_WPAR_U32 = (r << 24) | (g << 16) | (b << 8) | a;
+}
+
+void gx_flash_light(gx_light_id_t id, const gx_light_t* light) {
+    GX_WPAR_XF_LOAD(id, 16);
+    GX_WPAR_U32 = 0;
+    GX_WPAR_U32 = 0;
+    GX_WPAR_U32 = 0;
+    GX_WPAR_U32 = light->color;
+    GX_WPAR_F32 = light->cos_attenuation.x;
+    GX_WPAR_F32 = light->cos_attenuation.y;
+    GX_WPAR_F32 = light->cos_attenuation.z;
+    GX_WPAR_F32 = light->distance_attenuation.x;
+    GX_WPAR_F32 = light->distance_attenuation.y;
+    GX_WPAR_F32 = light->distance_attenuation.z;
+    GX_WPAR_F32 = light->position.x;
+    GX_WPAR_F32 = light->position.y;
+    GX_WPAR_F32 = light->position.z;
+    GX_WPAR_F32 = light->direction.x;
+    GX_WPAR_F32 = light->direction.y;
+    GX_WPAR_F32 = light->direction.z;
 }
