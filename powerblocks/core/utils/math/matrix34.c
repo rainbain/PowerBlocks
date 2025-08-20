@@ -82,9 +82,7 @@ void matrix34_multiply(matrix34 dst, const matrix34 a, const matrix34 b) {
         tmp[i][3] = a[i][0] * b[0][3] + a[i][1] * b[1][3] + a[i][2] * b[2][3] + a[i][3];
     }
 
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 4; ++j)
-            dst[i][j] = tmp[i][j];
+    MATRIX34_COPY(dst, tmp);
 }
 
 void matrix34_inverse(matrix34 dst, const matrix34 src) {

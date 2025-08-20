@@ -23,8 +23,10 @@ add_library(
     utils/crash_handler.c
     utils/math/arith64.c
     utils/math/floatdidf.c
+    utils/math/vec3.c
     utils/math/matrix4.c
     utils/math/matrix34.c
+    utils/math/matrix3.c
 
     freertos_port/port.c
     ${FREERTOS_PATH}/tasks.c
