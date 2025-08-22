@@ -24,6 +24,7 @@ jobs:
           context: .
           file: ./.docker/Dockerfile
           push: true
+          tags: ${{ steps.meta.outputs.tags }}
         
   imagetools:
     runs-on: ubuntu-latest
