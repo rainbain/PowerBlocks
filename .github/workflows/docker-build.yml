@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         arch: [ { 'tag': 'amd64', 'runner': 'ubuntu-latest' }, { 'tag': 'aarch64', 'runner': 'ubuntu-24.04-arm' } ]
-        style: [ { 'tag': 'slim', 'llvm_extras': '' }, { 'tag': 'dev', 'llvm_extras': ';clang-tools-extra;lldb' } ]
+        style: [ { 'tag': 'slim', 'llvm_extras': '', 'extra_installs': 'install-lldb install-clangd' }, { 'tag': 'dev', 'llvm_extras': ';clang-tools-extra;lldb', 'extra_installs': 'install-lldb install-clangd' } ]
     runs-on: ${{ matrix.arch.runner }}
     steps:
       - name: Checkout
@@ -41,7 +41,9 @@ jobs:
         with:
           context: .
           file: ./.docker/Dockerfile
-          build-args: LLVM_EXTRAS=${{ matrix.style.llvm_extras }}
+          build-args: |
+            LLVM_EXTRAS=${{ matrix.style.llvm_extras }}
+            EXTRA_INSTALLS=${{ matrix.style.extra_installs }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
         

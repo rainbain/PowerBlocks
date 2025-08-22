@@ -1,6 +1,7 @@
 FROM ubuntu:24.04
 
 ARG LLVM_EXTRAS=""
+ARG EXTRA_INSTALLS=""
 
 ENV SDK_HOME=/powerblocks
 ENV TOOLCHAIN=${SDK_HOME}/toolchain
@@ -8,7 +9,7 @@ ENV TOOLCHAIN=${SDK_HOME}/toolchain
 COPY --link . ${SDK_HOME}
 
 RUN apt update && apt upgrade -y && \
-    apt install -y clang cmake git lld ninja-build python3-full python3-pip zlib1g-dev
+    apt install -y --no-install-recommends clang cmake git lld ninja-build python3-full python3-pip zlib1g-dev
 
 RUN git clone --depth 1 https://github.com/llvm/llvm-project.git && \
     cd llvm-project && \
@@ -28,9 +29,12 @@ RUN git clone --depth 1 https://github.com/llvm/llvm-project.git && \
         -DCLANG_INCLUDE_DOCS=OFF \
         -DLLVM_ENABLE_BACKTRACES=OFF && \
     ninja && \
-    ninja install-clang install-lld install-llvm-ar install-llvm-ranlib install-llvm-objcopy install-llvm-strip install-llvm-objdump install-clang-resource-headers && \
+    ninja install-clang install-lld install-llvm-ar install-llvm-ranlib install-llvm-objcopy install-llvm-strip install-llvm-objdump install-clang-resource-headers ${EXTRA_INSTALLS} && \
     cd ../.. && \
     rm -rf llvm-project
+
+RUN apt remove clang lld && \
+    rm -rf /var/lib/apt/lists/*
 
 ENV EXTRA_C_FLAGS=""
 ENV PATH="$TOOLCHAIN/bin:$PATH"
