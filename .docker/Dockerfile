@@ -9,7 +9,7 @@ ENV TOOLCHAIN=${SDK_HOME}/toolchain
 COPY --link . ${SDK_HOME}
 
 RUN apt update && apt upgrade -y && \
-    apt install -y --no-install-recommends clang cmake git lld ninja-build python3-full python3-pip zlib1g-dev
+    apt install -y --no-install-recommends clang cmake git lld make ninja-build python3-full python3-pip zlib1g-dev
 
 RUN git clone --depth 1 https://github.com/llvm/llvm-project.git && \
     cd llvm-project && \
