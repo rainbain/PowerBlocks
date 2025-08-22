@@ -16,7 +16,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}:${{ matrix.arch.tag }}
+          images: ghcr.io/${{ github.repository }}
+          tags: ${{ matrix.arch.tag }}
       - name: Docker build
         id: docker-build
         uses: docker/build-push-action@v6
@@ -34,8 +35,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}:latest
-          labels:
+          images: ghcr.io/${{ github.repository }}
+          tags: latest
+
       - name: Create manifest list
         uses: kphrx/docker-buildx-imagetools-action@v0.1.0
         with:
