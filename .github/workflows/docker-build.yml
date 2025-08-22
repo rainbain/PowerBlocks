@@ -74,7 +74,7 @@ jobs:
         id: case
         uses: vishalmamidi/lowercase-action@v1
         with:
-          string: ${{ github.event.repository }}
+          string: ${{ github.repository }}
 
       - name: Create manifest list
         uses: kphrx/docker-buildx-imagetools-action@v0.1.0
