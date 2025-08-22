@@ -36,6 +36,6 @@ jobs:
         uses: kphrx/docker-buildx-imagetools-action@v0.1.0
         with:
           sources: |
-            sha256:${{ needs.build-images.outputs.amd64_sha }}
-            sha256:${{ needs.build-images.outputs.aarch64_sha }}
+            ${{ needs.build-images.outputs.amd64_sha }}
+            ${{ needs.build-images.outputs.aarch64_sha }}
           tags: ghcr.io/${{ github.repository }}:latest
