@@ -33,7 +33,7 @@ RUN git clone --depth 1 https://github.com/llvm/llvm-project.git && \
     cd ../.. && \
     rm -rf llvm-project
 
-RUN apt remove clang lld && \
+RUN apt remove -y clang lld && \
     rm -rf /var/lib/apt/lists/*
 
 ENV EXTRA_C_FLAGS=""
