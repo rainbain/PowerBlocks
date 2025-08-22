@@ -8,26 +8,22 @@ jobs:
     strategy:
       matrix:
         arch: [ { 'tag': 'amd64', 'runner': 'ubuntu-latest' }, { 'tag': 'aarch64', 'runner': 'ubuntu-24.04-arm' } ]
-    outputs:
-      amd64_sha: ${{ steps.docker-output.outputs.amd64_sha }}
-      aarch64_sha: ${{ steps.docker-output.outputs.aarch64_sha }}
     runs-on: ${{ matrix.arch.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}:${{ matrix.arch.tag }}
       - name: Docker build
         id: docker-build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./.docker/Dockerfile
-          push: false
-      - name: Tag output
-        id: docker-output
-        run: echo "${ARCH}_sha=${OUTPUT}" >> "$GITHUB_OUTPUT"
-        env:
-          OUTPUT: ${{ steps.docker-build.outputs.imageid }}
-          ARCH: ${{ matrix.arch.tag }}
+          push: true
         
   imagetools:
     runs-on: ubuntu-latest
@@ -38,12 +34,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}:latest
+          labels:
       - name: Create manifest list
         uses: kphrx/docker-buildx-imagetools-action@v0.1.0
         with:
           sources: |
-            ${{ needs.build-images.outputs.amd64_sha }}
-            ${{ needs.build-images.outputs.aarch64_sha }}
+            ghcr.io/${{ github.repository }}:amd64
+            ghcr.io/${{ github.repository }}:aarch64
           tags: ${{ steps.meta.outputs.tags }}
       - name: Push docker image
         run: docker image push ${{ steps.meta.outputs.tags }}
