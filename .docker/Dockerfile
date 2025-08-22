@@ -1,6 +1,8 @@
 FROM ubuntu:24.04
 
-ARG SDK_HOME=/powerblocks
+ARG LLVM_EXTRAS=""
+
+ENV SDK_HOME=/powerblocks
 ENV TOOLCHAIN=${SDK_HOME}/toolchain
 
 COPY --link . ${SDK_HOME}
@@ -16,7 +18,7 @@ RUN git clone --depth 1 https://github.com/llvm/llvm-project.git && \
         -DCMAKE_BUILD_TYPE=RELEASE \
         -DCMAKE_INSTALL_PREFIX=${TOOLCHAIN} \
         -DLLVM_TARGETS_TO_BUILD="PowerPC" \
-        -DLLVM_ENABLE_PROJECTS="clang;lld" \
+        -DLLVM_ENABLE_PROJECTS="clang;lld${LLVM_EXTRAS}" \
         -DLLVM_ENABLE_LLD=ON \
         -DLLVM_ENABLE_ASSERTIONS=OFF \
         -DLLVM_INCLUDE_EXAMPLES=OFF \

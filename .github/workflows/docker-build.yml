@@ -2,48 +2,85 @@ name: PowerBlocks Docker Image Build
 run-name: Build Docker images for PowerBlocks
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        required: true
+
+env:
+  REGISTRY: ghcr.io
 
 jobs:
   build-images:
     strategy:
       matrix:
         arch: [ { 'tag': 'amd64', 'runner': 'ubuntu-latest' }, { 'tag': 'aarch64', 'runner': 'ubuntu-24.04-arm' } ]
+        style: [ { 'tag': 'slim', 'llvm_extras': '' }, { 'tag': 'dev', 'llvm_extras': ';clang-tools-extra;lldb' } ]
     runs-on: ${{ matrix.arch.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
-          tags: ${{ matrix.arch.tag }}
+          tags: ${{ matrix.style.tag }}-${{ matrix.arch.tag }}
+      
       - name: Docker build
         id: docker-build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./.docker/Dockerfile
+          build-args: LLVM_EXTRAS="${{ matrix.style.llvm_extras }}"
           push: true
           tags: ${{ steps.meta.outputs.tags }}
         
   imagetools:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        style: [ 'slim', 'dev' ]
     needs: build-images
     steps:
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
-          tags: latest
+          tags: |
+            ${{ matrix.style}}-latest
+            ${{ matrix.style }}-${{ inputs.version }}
+
+      - name: Lowercase repo name for image reference
+        id: case
+        uses: vishalmamidi/lowercase-action@v1
+        with:
+          string: ${{ github.event.repository }}
 
       - name: Create manifest list
         uses: kphrx/docker-buildx-imagetools-action@v0.1.0
         with:
           sources: |
-            ghcr.io/${{ github.repository }}:amd64
-            ghcr.io/${{ github.repository }}:aarch64
+            ghcr.io/${{ steps.case.outputs.lowercase }}:${{ matrix.style }}-amd64
+            ghcr.io/${{ steps.case.outputs.lowercase }}:${{ matrix.style }}-aarch64
           tags: ${{ steps.meta.outputs.tags }}
+          
       - name: Push docker image
         run: docker image push ${{ steps.meta.outputs.tags }}
