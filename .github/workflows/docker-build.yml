@@ -21,6 +21,7 @@ jobs:
         with:
           context: .
           file: ./.docker/Dockerfile
+          push: false
       - name: Tag output
         id: docker-output
         run: echo "${ARCH}_sha=${OUTPUT}" >> "$GITHUB_OUTPUT"
@@ -32,10 +33,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-images
     steps:
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}:latest
       - name: Create manifest list
         uses: kphrx/docker-buildx-imagetools-action@v0.1.0
         with:
           sources: |
             ${{ needs.build-images.outputs.amd64_sha }}
             ${{ needs.build-images.outputs.aarch64_sha }}
-          tags: ghcr.io/${{ github.repository }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
+      - name: Push docker image
+        run: docker image push ${{ steps.meta.outputs.tags }}
