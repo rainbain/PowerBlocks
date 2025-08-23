@@ -16,17 +16,26 @@
 #include <stdio.h>
 
 static framebuffer_t* console_framebuffer = NULL;
-static vec2i console_cursor_position;
-static const framebuffer_font_t* console_font;
+vec2i console_cursor_position;
+uint32_t console_foreground_color;
+uint32_t console_background_color;
+const framebuffer_font_t* console_font;
 
 void console_initialize(framebuffer_t* framebuffer, const framebuffer_font_t* font) {
     console_framebuffer = framebuffer;
     console_cursor_position = vec2i_new(0, 0);
+    console_foreground_color = 0xFFFFFFFF;
+    console_background_color = 0x000000FF;
     console_font = font;
 }
 
 void console_set_cursor(vec2i cursor_position) {
     console_cursor_position = cursor_position;
+}
+
+void console_set_text_color(uint32_t foreground, uint32_t background) {
+    console_foreground_color = foreground;
+    console_background_color = background;
 }
 
 void console_put(const char* string) {
@@ -66,7 +75,7 @@ void console_put(const char* string) {
                 line_pos.y -= diff;
 
                 // Clear new space
-                framebuffer_fill_rgba(console_framebuffer, 0x000000FF, vec2i_new(0,VIDEO_HEIGHT-diff), vec2i_new(VIDEO_WIDTH, VIDEO_HEIGHT));
+                framebuffer_fill_rgba(console_framebuffer, console_background_color, vec2i_new(0,VIDEO_HEIGHT-diff), vec2i_new(VIDEO_WIDTH, VIDEO_HEIGHT));
             }
         }
 
@@ -75,7 +84,7 @@ void console_put(const char* string) {
         if(flush_console) {
             line[line_index] = 0;
 
-            framebuffer_put_text(console_framebuffer, 0xFFFFFFFF, 0x000000FF,
+            framebuffer_put_text(console_framebuffer, console_foreground_color, console_background_color,
                 line_pos, console_font, line);
             
             line_pos = console_cursor_position;

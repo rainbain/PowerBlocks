@@ -15,6 +15,11 @@
 // This code was written while I was on a small
 // airplane. May have weird formatting
 
+extern vec2i console_cursor_position;
+extern uint32_t console_foreground_color;
+extern uint32_t console_background_color;
+extern const framebuffer_font_t* console_font;
+
  /**
  * @brief Initializes the visual console.
  *
@@ -35,6 +40,13 @@ extern void console_initialize(framebuffer_t* framebuffer, const framebuffer_fon
  * Set the position of the cursor in pixels.
  */
 extern void console_set_cursor(vec2i cursor_position);
+
+/**
+ * @brief Sets the color text color.
+ * 
+ * Sets the color text color.
+ */
+extern void console_set_text_color(uint32_t foreground, uint32_t background);
 
  /**
  * @brief Puts a string into the console.
