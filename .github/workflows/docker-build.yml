@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         arch: [ { 'tag': 'amd64', 'runner': 'ubuntu-latest' }, { 'tag': 'aarch64', 'runner': 'ubuntu-24.04-arm' } ]
-        style: [ { 'tag': 'slim', 'llvm_extras': '', 'extra_installs': '' }, { 'tag': 'dev', 'llvm_extras': ';clang-tools-extra;lldb', 'extra_installs': 'install-lldb install-clangd' } ]
+        style: [ { 'tag': 'slim', 'llvm_extras': '', 'extra_installs': '' }, { 'tag': 'dev', 'llvm_extras': ';clang-tools-extra;lldb', 'extra_installs': 'install-clangd install-lldb install-lldb-dap' } ]
     runs-on: ${{ matrix.arch.runner }}
     steps:
       - name: Checkout
