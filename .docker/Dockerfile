@@ -30,10 +30,12 @@ RUN git clone --depth 1 https://github.com/llvm/llvm-project.git && \
         -DLLVM_ENABLE_BACKTRACES=OFF && \
     ninja && \
     ninja install-clang install-lld install-llvm-ar install-llvm-ranlib install-llvm-objcopy install-llvm-strip install-llvm-objdump install-clang-resource-headers ${EXTRA_INSTALLS} && \
+    cp -a lib/* ${TOOLCHAIN}/lib/ && \
     cd ../.. && \
     rm -rf llvm-project
 
 RUN apt remove -y clang lld && \
+    apt autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
 ENV EXTRA_C_FLAGS=""
