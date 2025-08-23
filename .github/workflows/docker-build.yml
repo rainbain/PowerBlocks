@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -28,7 +28,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: powerblocks
           tags: ${{ matrix.style.tag }}-${{ matrix.arch.tag }}
       
       - name: Docker build
@@ -56,6 +56,13 @@ jobs:
         style: [ 'slim', 'dev' ]
     needs: build-images
     steps:
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
       - name: Download AMD64 image
         uses: actions/download-artifact@v4
         with:
@@ -72,13 +79,6 @@ jobs:
           docker load --input ${{ runner.temp }}/${{ matrix.style }}-amd64.tar
           docker load --input ${{ runner.temp }}/${{ matrix.style }}-arm64.tar
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
@@ -88,16 +88,10 @@ jobs:
             ${{ matrix.style}}-latest
             ${{ matrix.style }}-${{ inputs.version }}
 
-      - name: Lowercase repo name for image reference
-        id: case
-        uses: vishalmamidi/lowercase-action@v1
-        with:
-          string: ${{ github.repository }}
-
       - name: Create manifest list
         uses: kphrx/docker-buildx-imagetools-action@v0.1.0
         with:
           sources: |
-            ghcr.io/${{ steps.case.outputs.lowercase }}:${{ matrix.style }}-amd64
-            ghcr.io/${{ steps.case.outputs.lowercase }}:${{ matrix.style }}-arm64
+            powerblocks:${{ matrix.style }}-amd64
+            powerblocks:${{ matrix.style }}-arm64
           tags: ${{ steps.meta.outputs.tags }}
