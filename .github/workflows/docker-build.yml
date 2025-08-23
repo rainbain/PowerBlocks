@@ -83,6 +83,3 @@ jobs:
             ghcr.io/${{ steps.case.outputs.lowercase }}:${{ matrix.style }}-amd64
             ghcr.io/${{ steps.case.outputs.lowercase }}:${{ matrix.style }}-aarch64
           tags: ${{ steps.meta.outputs.tags }}
-
-      - name: Push docker image
-        run: docker image push ${{ steps.meta.outputs.tags }}
