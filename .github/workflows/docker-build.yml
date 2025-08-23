@@ -14,7 +14,7 @@ jobs:
   build-images:
     strategy:
       matrix:
-        arch: [ { 'tag': 'amd64', 'runner': 'ubuntu-latest' }, { 'tag': 'aarch64', 'runner': 'ubuntu-24.04-arm' } ]
+        arch: [ { 'tag': 'amd64', 'runner': 'ubuntu-latest' }, { 'tag': 'arm64', 'runner': 'ubuntu-24.04-arm' } ]
         style: [ { 'tag': 'slim', 'llvm_extras': '', 'extra_installs': '' }, { 'tag': 'dev', 'llvm_extras': ';clang-tools-extra;lldb', 'extra_installs': 'install-clangd install-lldb install-lldb-dap' } ]
     runs-on: ${{ matrix.arch.runner }}
     steps:
@@ -81,5 +81,5 @@ jobs:
         with:
           sources: |
             ghcr.io/${{ steps.case.outputs.lowercase }}:${{ matrix.style }}-amd64
-            ghcr.io/${{ steps.case.outputs.lowercase }}:${{ matrix.style }}-aarch64
+            ghcr.io/${{ steps.case.outputs.lowercase }}:${{ matrix.style }}-arm64
           tags: ${{ steps.meta.outputs.tags }}
