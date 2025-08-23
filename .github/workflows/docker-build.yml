@@ -41,13 +41,21 @@ jobs:
             LLVM_EXTRAS=${{ matrix.style.llvm_extras }}
             EXTRA_INSTALLS=${{ matrix.style.extra_installs }}
           tags: ${{ steps.meta.outputs.tags }}
-          outputs: type=docker,dest=${{ runner.temp }}/${{ matrix.style.tag }}-${{ matrix.arch.tag }}.tar
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p ${{ runner.temp }}/digests
+          digest="${{ steps.docker-build.outputs.digest }}"
+          touch $"{{ runner.temp }}/digests/${digest#sha256:}"
 
       - name: Upload image
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.style.tag }}-${{ matrix.arch.tag }}
-          path: ${{ runner.temp }}/${{ matrix.style.tag }}-${{ matrix.arch.tag }}.tar
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
         
   imagetools:
     runs-on: ubuntu-latest
@@ -55,25 +63,13 @@ jobs:
       matrix:
         style: [ 'slim', 'dev' ]
     needs: build-images
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-          
+    steps:          
       - name: Download AMD64 image
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.style }}-amd64
-          path: ${{ runner.temp }}
-      - name: Download ARM64 image
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.style }}-arm64
-          path: ${{ runner.temp }}
-
-      - name: Load images
-        run: |
-          docker load --input ${{ runner.temp }}/${{ matrix.style }}-amd64.tar
-          docker load --input ${{ runner.temp }}/${{ matrix.style }}-arm64.tar
+          path: ${{ runner.temp }}/digests
+          pattern: ${{ matrix.style }}-*
+          merge-multiple: true
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -81,6 +77,9 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
