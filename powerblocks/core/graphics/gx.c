@@ -198,6 +198,36 @@ static const char* TAB = "GX";
 #define BP_PE_COPY_EXECUTE_LINE_MODE(x)   ((x)<<12)
 #define BP_PE_COPY_EXECUTE_EXECUTE        (1<<14)
 
+#define BP_TEV_COLOR_ENV_SELECT_D(x)      ((x)<<0)
+#define BP_TEV_COLOR_ENV_SELECT_C(x)      ((x)<<4)
+#define BP_TEV_COLOR_ENV_SELECT_B(x)      ((x)<<8)
+#define BP_TEV_COLOR_ENV_SELECT_A(x)      ((x)<<12)
+#define BP_TEV_COLOR_ENV_BIAS(x)          ((x)<<16)
+#define BP_TEV_COLOR_ENV_SUB              (1<<18)
+#define BP_TEV_COLOR_ENV_CLAMP            (1<<19)
+#define BP_TEV_COLOR_ENV_SHIFT(x)         ((x)<<20)
+#define BP_TEV_COLOR_ENV_DEST(X)          ((X)<<22)
+#define BP_TEV_COLOR_ENV_COMPARISON(x)    ((x)<<19) // Enabled if BIAS = 3
+
+#define BP_TEV_ALPHA_ENV_RSWAP(x)         ((x)<<0)
+#define BP_TEV_ALPHA_ENV_TSWAP(x)         ((x)<<2)
+#define BP_TEV_ALPHA_ENV_SELECT_D(x)      ((x)<<4)
+#define BP_TEV_ALPHA_ENV_SELECT_C(x)      ((x)<<7)
+#define BP_TEV_ALPHA_ENV_SELECT_B(x)      ((x)<<10)
+#define BP_TEV_ALPHA_ENV_SELECT_A(x)      ((x)<<13)
+#define BP_TEV_ALPHA_ENV_BIAS(x)          ((x)<<16)
+#define BP_TEV_ALPHA_ENV_SUB              (1<<18)
+#define BP_TEV_ALPHA_ENV_CLAMP            (1<<19)
+#define BP_TEV_ALPHA_ENV_SHIFT(x)         ((x)<<20)
+#define BP_TEV_ALPHA_ENV_DEST(X)          ((X)<<22)
+#define BP_TEV_ALPHA_ENV_COMPARISON(x)    ((x)<<19) // Enabled if BIAS = 3
+
+#define BP_TEV_REGISTERL_R(x)             ((x&0x7FF)<<0)
+#define BP_TEV_REGISTERL_A(x)             ((x&0x7FF)<<12)
+
+#define BP_TEV_REGISTERH_B(x)             ((x&0x7FF)<<0)
+#define BP_TEV_REGISTERH_G(x)             ((x&0x7FF)<<12)
+
 #define BP_PE_DONE_END_OF_LIST  (1<<1)
 
 // 2 MB Embedded Frame Buffer
@@ -448,6 +478,35 @@ void gx_initialize_state() {
     gx_set_line_mode(GX_LINE_MODE_PROGRESSIVE);
     gx_set_clear_color(0, 0, 0, 0);
     gx_set_clear_z(0xFFFFFF);
+
+    //
+    // Default TEV Stages
+    //
+    gx_set_tev_stages(1);
+
+    gx_tev_stage_t empty_tev;
+    gx_initialize_tev_stage(&empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_0, &empty_tev);
+
+    // For later stages lets make it pass color/alpha
+    gx_set_tev_stage_color_input(&empty_tev, GX_TEV_IO_ZERO, GX_TEV_IO_ZERO, GX_TEV_IO_ZERO, GX_TEV_IO_PREVIOUS);
+    gx_set_tev_stage_alpha_input(&empty_tev, GX_TEV_IO_ZERO, GX_TEV_IO_ZERO, GX_TEV_IO_ZERO, GX_TEV_IO_PREVIOUS);
+
+    gx_flash_tev_stage(GX_TEV_STAGE_1, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_2, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_3, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_4, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_5, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_6, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_7, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_8, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_9, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_10, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_11, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_12, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_13, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_14, &empty_tev);
+    gx_flash_tev_stage(GX_TEV_STAGE_15, &empty_tev);
 }
 
 void gx_initialize_video(const video_profile_t* video_profile) {
@@ -706,7 +765,7 @@ void gx_vtxfmtattr_set(uint8_t attribute_index, gx_vtxdesc_t attribute, gx_vtxat
 }
 
 void gx_set_texcoord_channels(uint32_t count) {
-    gx_state.genmode = (gx_state.genmode & ~BP_GENMODE_NTEX(0xF)) | BP_GENMODE_NTEV(count);
+    gx_state.genmode = (gx_state.genmode & ~BP_GENMODE_NTEX(0xF)) | BP_GENMODE_NTEX(count);
     gx_state.dirty |= GX_DIRTY_BP_GENMODE_NEEDS_UPDATE | GX_DIRTY_XF_TEXCOORD_NEEDS_UPDATE;
 }
 
@@ -1047,4 +1106,95 @@ void gx_flash_light(gx_light_id_t id, const gx_light_t* light) {
     GX_WPAR_F32 = light->direction.x;
     GX_WPAR_F32 = light->direction.y;
     GX_WPAR_F32 = light->direction.z;
+}
+
+/* -------------------TEV Stage Control--------------------- */
+
+void gx_set_tev_stages(int count) {
+    gx_state.genmode &= ~BP_GENMODE_NTEV(0xF);
+    gx_state.genmode |= BP_GENMODE_NTEV(count - 1);
+    gx_state.dirty |= GX_DIRTY_BP_GENMODE_NEEDS_UPDATE;
+}
+
+void gx_initialize_tev_stage(gx_tev_stage_t* tev) {
+    // Clear registers to zero
+    tev->color_control = 0;
+    tev->alpha_control = 0;
+
+    // Color operation
+    gx_set_tev_stage_color_input(tev, GX_TEV_IO_ZERO, GX_TEV_IO_ZERO, GX_TEV_IO_ZERO, GX_TEV_IO_RASTERIZER);
+    gx_set_tev_stage_color_output(tev, GX_TEV_IO_PREVIOUS, true);
+    gx_set_tev_stage_color_biasing(tev, false, GX_TEV_BIAS_0, GX_TEV_SCALE_1);
+
+    // Alpha Operation
+    gx_set_tev_stage_alpha_input(tev, GX_TEV_IO_ZERO, GX_TEV_IO_ZERO, GX_TEV_IO_ZERO, GX_TEV_IO_RASTERIZER);
+    gx_set_tev_stage_alpha_output(tev, GX_TEV_IO_PREVIOUS, true);
+    gx_set_tev_stage_alpha_biasing(tev, false, GX_TEV_BIAS_0, GX_TEV_SCALE_1);
+}
+
+void gx_flash_tev_stage(gx_tev_stage_id id, const gx_tev_stage_t* tev) {
+    // 2 pairs of color environment registers per TEV.
+    uint32_t color_env_rid = GX_BP_REGISTERS_TEV0_COLOR_ENV + ((id * 2) << 24);
+    uint32_t alpha_env_rid = GX_BP_REGISTERS_TEV0_ALPHA_ENV + ((id * 2) << 24);
+    GX_WPAR_BP_LOAD(color_env_rid | tev->color_control);
+    GX_WPAR_BP_LOAD(alpha_env_rid | tev->alpha_control);
+}
+
+void gx_set_tev_stage_color_input(gx_tev_stage_t* tev, gx_tev_io_t a, gx_tev_io_t b, gx_tev_io_t c, gx_tev_io_t d) {
+    tev->color_control &= ~(BP_TEV_COLOR_ENV_SELECT_A(0xF) | BP_TEV_COLOR_ENV_SELECT_B(0xF) | BP_TEV_COLOR_ENV_SELECT_C(0xF) | BP_TEV_COLOR_ENV_SELECT_D(0xF));
+    tev->color_control |= BP_TEV_COLOR_ENV_SELECT_A(a) | BP_TEV_COLOR_ENV_SELECT_B(b) | BP_TEV_COLOR_ENV_SELECT_C(c) | BP_TEV_COLOR_ENV_SELECT_D(d);
+}
+
+void gx_set_tev_stage_alpha_input(gx_tev_stage_t* tev, gx_tev_io_t a, gx_tev_io_t b, gx_tev_io_t c, gx_tev_io_t d) {
+    // There very close. But saddly, not exact. Constant enum is different
+    a = a == GX_TEV_IO_CONSTANT ? 6 : (a >> 1);
+    b = b == GX_TEV_IO_CONSTANT ? 6 : (b >> 1);
+    c = c == GX_TEV_IO_CONSTANT ? 6 : (c >> 1);
+    d = d == GX_TEV_IO_CONSTANT ? 6 : (d >> 1);
+
+    tev->alpha_control &= ~(BP_TEV_ALPHA_ENV_SELECT_A(0x7) | BP_TEV_ALPHA_ENV_SELECT_B(0x7) | BP_TEV_ALPHA_ENV_SELECT_C(0x7) | BP_TEV_ALPHA_ENV_SELECT_D(0x7));
+    tev->alpha_control |= BP_TEV_ALPHA_ENV_SELECT_A(a) | BP_TEV_ALPHA_ENV_SELECT_B(b) | BP_TEV_ALPHA_ENV_SELECT_C(c) | BP_TEV_ALPHA_ENV_SELECT_D(d);
+}
+
+void gx_set_tev_stage_color_output(gx_tev_stage_t* tev, gx_tev_io_t out, bool clamp) {
+    tev->color_control &= ~(BP_TEV_COLOR_ENV_CLAMP | BP_TEV_COLOR_ENV_DEST(0xF));
+    tev->color_control |= BP_TEV_COLOR_ENV_DEST(out) | (clamp ? BP_TEV_COLOR_ENV_CLAMP : 0);
+}
+
+void gx_set_tev_stage_alpha_output(gx_tev_stage_t* tev, gx_tev_io_t out, bool clamp) {
+    out = out == GX_TEV_IO_CONSTANT ? 6 : (out >> 1);
+
+    tev->alpha_control &= ~(BP_TEV_ALPHA_ENV_CLAMP | BP_TEV_ALPHA_ENV_DEST(0x7));
+    tev->alpha_control |= BP_TEV_ALPHA_ENV_DEST(out) | (clamp ? BP_TEV_ALPHA_ENV_CLAMP : 0);
+}
+
+void gx_set_tev_stage_color_biasing(gx_tev_stage_t* tev, bool subtract, gx_tev_bias_t bias, gx_tev_scale_t scale) {
+    tev->color_control &= ~(BP_TEV_COLOR_ENV_BIAS(0b11) | BP_TEV_COLOR_ENV_SHIFT(0b11));
+    tev->color_control |= (subtract ? BP_TEV_COLOR_ENV_SUB : 0) | BP_TEV_COLOR_ENV_BIAS(bias) | BP_TEV_COLOR_ENV_SHIFT(scale);
+}
+
+void gx_set_tev_stage_color_comparison(gx_tev_stage_t* tev, gx_tev_compare_t comparison) {
+    // So, biasing mode 3 is comparison mode. Fun assignments...
+    tev->color_control &= ~BP_TEV_COLOR_ENV_COMPARISON(0x7);
+    tev->color_control |= BP_TEV_COLOR_ENV_COMPARISON(comparison) | BP_TEV_COLOR_ENV_BIAS(3);
+}
+
+void gx_set_tev_stage_alpha_biasing(gx_tev_stage_t* tev, bool subtract, gx_tev_bias_t bias, gx_tev_scale_t scale) {
+    tev->alpha_control &= ~(BP_TEV_ALPHA_ENV_SUB | BP_TEV_ALPHA_ENV_BIAS(0b11) | BP_TEV_ALPHA_ENV_SHIFT(0b11));
+    tev->alpha_control |= (subtract ? BP_TEV_ALPHA_ENV_SUB : 0) | BP_TEV_ALPHA_ENV_BIAS(bias) | BP_TEV_ALPHA_ENV_SHIFT(scale);
+}
+
+void gx_set_tev_stage_alpha_comparison(gx_tev_stage_t* tev, gx_tev_compare_t comparison) {
+    // So, biasing mode 3 is comparison mode. Fun assignments...
+    tev->alpha_control &= ~BP_TEV_ALPHA_ENV_COMPARISON(0x7);
+    tev->alpha_control |= BP_TEV_ALPHA_ENV_COMPARISON(comparison) | BP_TEV_ALPHA_ENV_BIAS(3);
+}
+
+void gx_flash_tev_register_color(gx_tev_io_t reg, int r, int g, int b, int a) {
+    GX_WPAR_BP_LOAD((GX_BP_REGISTERS_TEV_REGISTERL_0 + (reg << 24)) |
+        BP_TEV_REGISTERL_R(r) | BP_TEV_REGISTERL_A(a)
+    );
+    GX_WPAR_BP_LOAD((GX_BP_REGISTERS_TEV_REGISTERH_0 + (reg << 24)) |
+        BP_TEV_REGISTERH_B(b) | BP_TEV_REGISTERH_G(g)
+    );
 }

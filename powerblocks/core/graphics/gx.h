@@ -31,6 +31,7 @@
 #define GX_WPAR_F32 (*(volatile float*)GX_WPAR_ADDRESS)
 
 #include "gx_xf.h"
+#include "gx_tev.h"
 #include "gx_immediate.h"
 
 // Vertex Data Type
@@ -192,6 +193,10 @@ typedef enum {
 #define GX_BP_REGISTERS_COPY_FILTER_COEFF_A          (0x53 << 24)
 #define GX_BP_REGISTERS_COPY_FILTER_COEFF_B          (0x54 << 24)
 #define GX_BP_REGISTERS_SCISSOR_OFFSET               (0x59 << 24)
+#define GX_BP_REGISTERS_TEV0_COLOR_ENV               (0xC0 << 24)
+#define GX_BP_REGISTERS_TEV0_ALPHA_ENV               (0xC1 << 24)
+#define GX_BP_REGISTERS_TEV_REGISTERL_0              (0xE0 << 24)
+#define GX_BP_REGISTERS_TEV_REGISTERH_0              (0xE1 << 24)
 
 #define GX_CP_REGISTERS_MTXIDX_A 0x30
 #define GX_CP_REGISTERS_MTXIDX_B 0x40
