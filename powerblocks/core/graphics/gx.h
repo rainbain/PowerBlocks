@@ -155,19 +155,40 @@ typedef enum {
     GX_LINE_MODE_ODD,
 } gx_line_mode_t;
 
+// So in actual hardware, the first 4, and last 4 textures are in
+// separated memory addresses. I kept the enum simple though since
+// I did not want it messing with things.
+typedef enum {
+    GX_TEXTURE_ID_0,
+    GX_TEXTURE_ID_1,
+    GX_TEXTURE_ID_2,
+    GX_TEXTURE_ID_3,
+    GX_TEXTURE_ID_4,
+    GX_TEXTURE_ID_5,
+    GX_TEXTURE_ID_6,
+    GX_TEXTURE_ID_7
+} gx_texture_id_t;
+
 #define GX_WPAR_OPCODE_LOAD_CP                 0x08
 #define GX_WPAR_OPCODE_LOAD_XF                 0x10
 #define GX_WPAR_OPCODE_LOAD_BP                 0x61
 #define GX_WPAR_OPCODE_PRIMITIVE(type, format) (((uint8_t)type) | format)
 
+#define GX_XF_MEMORY_POSTEX_MTX_0     0x0000
+#define GX_XF_MEMORY_NORMAL_MTX_0     0x0400
+#define GX_XF_MEMORY_DUALTEX_MTX_0    0x0500
+#define GX_XF_MEMORY_LIGHT0           0x0600
 #define GX_XF_REGISTER_VERTEX_STATS   0x1008
 #define GX_XF_REGISTER_COLOR_COUNT    0x1009
-#define GX_XF_REGISTERS_MTXIDX_A      0x1018
-#define GX_XF_REGISTERS_MTXIDX_B      0x1019
+#define GX_XF_REGISTER_COLOR_CONTROL  0x100E
+#define GX_XF_REGISTER_DUALTEXTRANS   0x1012
+#define GX_XF_REGISTER_MTXIDX_A       0x1018
+#define GX_XF_REGISTER_MTXIDX_B       0x1019
 #define GX_XF_REGISTER_VIEWPORT       0x101A
 #define GX_XF_REGISTER_PROJECTION     0x1020
 #define GX_XF_REGISTER_TEXCOORD_COUNT 0x103F
-#define GX_XF_REGISTER_COLOR_CONTROL  0x100E
+#define GX_XF_REGISTER_TEX0           0x1040
+#define GX_XF_REGISTER_DUALTEX0       0x1050
 
 #define GX_BP_REGISTERS_GENMODE                      (0x00 << 24)
 #define GX_BP_REGISTERS_COPY_FILTER_POS_A            (0x01 << 24)
@@ -176,6 +197,8 @@ typedef enum {
 #define GX_BP_REGISTERS_COPY_FILTER_POS_D            (0x04 << 24)
 #define GX_BP_REGISTERS_SCISSOR_TL                   (0x20 << 24)
 #define GX_BP_REGISTERS_SCISSOR_BR                   (0x21 << 24)
+#define GX_BP_REGISTERS_SSIZE0                       (0x30 << 24)
+#define GX_BP_REGISTERS_TSIZE0                       (0x31 << 24)
 #define GX_BP_REGISTERS_Z_MODE                       (0x40 << 24)
 #define GX_BP_REGISTERS_CMODE_0                      (0x41 << 24)
 #define GX_BP_REGISTERS_CMODE_1                      (0x42 << 24)
@@ -193,6 +216,13 @@ typedef enum {
 #define GX_BP_REGISTERS_COPY_FILTER_COEFF_A          (0x53 << 24)
 #define GX_BP_REGISTERS_COPY_FILTER_COEFF_B          (0x54 << 24)
 #define GX_BP_REGISTERS_SCISSOR_OFFSET               (0x59 << 24)
+#define GX_BP_REGISTERS_TX_SETMODE0_I0               (0x80 << 24) // 0-3 HERE, 4-7 AT 0XA0
+#define GX_BP_REGISTERS_TX_SETMODE1_I0               (0x84 << 24) // 0-3 HERE, 4-7 AT 0XA4
+#define GX_BP_REGISTERS_TX_SETIMAGE0_I0              (0x88 << 24) // 0-3 HERE, 4-7 AT 0XA8
+#define GX_BP_REGISTERS_TX_SETIMAGE1_I0              (0x8C << 24) // 0-3 HERE, 4-7 AT 0XAC
+#define GX_BP_REGISTERS_TX_SETIMAGE2_I0              (0x90 << 24) // 0-3 HERE, 4-7 AT 0XB0
+#define GX_BP_REGISTERS_TX_SETIMAGE3_I0              (0x94 << 24) // 0-3 HERE, 4-7 AT 0XB4
+#define GX_BP_REGISTERS_TX_SETTLUT_0                 (0x98 << 24) // 0-3 HERE, 4-7 AT 0XB8
 #define GX_BP_REGISTERS_TEV0_COLOR_ENV               (0xC0 << 24)
 #define GX_BP_REGISTERS_TEV0_ALPHA_ENV               (0xC1 << 24)
 #define GX_BP_REGISTERS_TEV_REGISTERL_0              (0xE0 << 24)
@@ -245,6 +275,50 @@ typedef struct {
     uint32_t read_head;
     uint32_t breakpoint;
 } gx_fifo_t;
+
+/** @brief Cool little texture object.
+ * Really just a copy of the registers that will be set onto the GPU when the texture is loaded.
+*/
+typedef struct {
+    // Texture Control Registers
+    uint32_t mode0; // lookup and filtering register
+    uint32_t mode1; // LOD data
+    uint32_t image0; // Width, hight, format
+    uint32_t image1; // even LOD address in TMEM
+    uint32_t image2; // odd LOD address in TMEM
+    uint32_t image3; // Address in main memory
+    uint32_t lut; // offset + format
+} gx_texture_t;
+
+typedef enum {
+    GX_TEXTURE_FORMAT_I4,      // 4 Ininstty/Brightness Bits
+    GX_TEXTURE_FORMAT_I8,      // 8 Ininstty/Brightness Bits
+    GX_TEXTURE_FORMAT_IA4,     // 4 Intensity + 4 Alpha
+    GX_TEXTURE_FORMAT_IA8,     // 8 Intensity + 8 Alpha
+    GX_TEXTURE_FORMAT_RGB565,  // 5 Red + 6 Green + 5 Blue
+    GX_TEXTURE_FORMAT_RGB5A3,  // 5 bits each for R, G, and B, then 3 for alpha
+    GX_TEXTURE_FORMAT_RGBA8,   // 8 bits for each R, G, B, and A
+    GX_TEXTURE_FORMAT_C4 = 8,  // 4 bit color indexing
+    GX_TEXTURE_FORMAT_C8,      // 8 bit color indexing
+    GX_TEXTURE_FORMAT_C14X2,   // 14 bit indexing + 2 alignment bits?
+    GX_TEXTURE_FORMAT_CMP = 14 // Compressed
+} gx_texture_format_t;
+
+typedef enum {
+    GX_WRAP_CLAMP,
+    GX_WRAP_REPEAT,
+    GX_WRAP_MIRROR
+} gx_texture_wrap_t;
+
+// This is used internally when decoding texture formats
+typedef enum {
+    GX_TEXTURE_MIN_FILTER_NEAR,
+    GX_TEXTURE_MIN_FILTER_NEAR_MIP,
+    GX_TEXTURE_MIN_FILTER_NEAR_MIP_LINEAR,
+    GX_TEXTURE_MIN_FILTER_LINEAR = 4,
+    GX_TEXTURE_MIN_FILTER_LINEAR_MIP_NEAR,
+    GX_TEXTURE_MIN_FILTER_LINEAR_MIP_LINEAR,
+} gx_texture_min_filter;
 
 /**
  * @brief Initializes the graphics.
@@ -406,15 +480,6 @@ extern void gx_vtxfmtattr_clear(uint8_t attribute_index);
  * @param fraction Number of fractional bits in fixed point values. That is, inititer formats like S16, will be divided by 2^fraction. 0-31
  */
 extern void gx_vtxfmtattr_set(uint8_t attribute_index, gx_vtxdesc_t attribute, gx_vtxattr_component_t component, gx_vtxattr_component_format_t fmt, uint8_t fraction);
-
-/**
- * @brief Set a texture coord count
- * 
- * Like gx_set_color_channels, set the number of texcoords that should be generated.
- * 
- * @param count Number of color channels to supply the BP/TEV
-*/
-extern void gx_set_texcoord_channels(uint32_t count);
 
 /**
  * @brief Begin drawing primatives.
@@ -629,3 +694,36 @@ extern void gx_set_pixel_format(gx_pixel_format_t pixels_format, gx_z_format_t z
  * @param clear Clear the internal frame buffer during the copy.
  */
 extern void gx_copy_framebuffer(framebuffer_t* framebuffer, bool clear);
+
+/* -------------------Textures--------------------- */
+/**
+ * @brief Initializes a texture object for use.
+ * 
+ * Initializes a texture object to be loaded whenever needed.
+ * This does not actually allocate or contain the image data. Make sure to keep that safe.
+ * No, it just holds the state of the registers needed in order to draw that texture.
+ * 
+ * @param texture The texture object to setup
+ * @param data Image data of the format
+ * @param format Texture Format
+ * @param width Width of the texture
+ * @param height Height of the texture
+ * @param s_wrap S Wrap (X values)
+ * @param t_wrap T Wrap (Y values)
+ * @param mipmap Enabling Mipmapping 
+*/
+extern void gx_initialize_texture(gx_texture_t* texture, const void* data, gx_texture_format_t format, int width, int height,
+                                  gx_texture_wrap_t s_wrap, gx_texture_wrap_t t_wrap, bool mipmap);
+
+/**
+ * @brief Flashes a texture configuration onto the BP
+ * 
+ * Sets up a texture for drawing by configuring the registers.
+ * 
+ * Its data wont be loaded into memory at this point, just that future draws
+ * with it will begin loading this new data.
+ * 
+ * @param map The texture channel to load into. 1-8
+ * @param texture The texture register data.
+ */
+extern void gx_flash_texture(gx_texture_map_t map, const gx_texture_t* texture);

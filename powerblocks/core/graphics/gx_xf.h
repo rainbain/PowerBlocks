@@ -20,18 +20,48 @@
 
 /* -------------------XF Matrix Control--------------------- */
 
-typedef enum { // Row of the matrix. As compared to their addressing since normal matrixes are smaller
-    GX_PSNMTX_0 = 0,
-    GX_PSNMTX_1 = 3,
-    GX_PSNMTX_2 = 6,
-    GX_PSNMTX_3 = 9,
-    GX_PSNMTX_4 = 12,
-    GX_PSNMTX_5 = 15,
-    GX_PSNMTX_6 = 18,
-    GX_PSNMTX_7 = 21,
-    GX_PSNMTX_8 = 24,
-    GX_PSNMTX_9 = 27,
-} gx_psnmtx_idx;
+/**
+ * @enum gx_mtx_id_t
+ * @brief Universal matrix ids.
+ *
+ * These are used for addressing geometry, normal, texcoord matrices
+ * and dual texcoord matrices.
+ * 
+ * Depending on what of these its for, some or all of these may be valid.
+ * 
+ * Geometry and texcoord share the same memory, and use GX_MTX_ID_0
+ * through GX_MTX_ID_20. Where GX_MTX_ID_20 by default
+ * is loaded as an idiniticy matrix for them to use.
+ * 
+ * Normal matrices can only use GX_MTX_ID_0 through GX_MTX_ID_9.
+ * 
+ * Dual texcoords have their own stack and can use GX_MTX_ID_0, GX_MTX_ID_20.
+ */
+typedef enum {
+    GX_MTX_ID_0  = (0*3),
+    GX_MTX_ID_1  = (1*3),
+    GX_MTX_ID_2  = (2*3),
+    GX_MTX_ID_3  = (3*3),
+    GX_MTX_ID_4  = (4*3),
+    GX_MTX_ID_5  = (5*3),
+    GX_MTX_ID_6  = (6*3),
+    GX_MTX_ID_7  = (7*3),
+    GX_MTX_ID_8  = (8*3),
+    GX_MTX_ID_9  = (9*3),
+    GX_MTX_ID_10 = (10*3),
+    GX_MTX_ID_11 = (11*3),
+    GX_MTX_ID_12 = (12*3),
+    GX_MTX_ID_13 = (13*3),
+    GX_MTX_ID_14 = (14*3),
+    GX_MTX_ID_15 = (15*3),
+    GX_MTX_ID_16 = (16*3),
+    GX_MTX_ID_17 = (17*3),
+    GX_MTX_ID_18 = (18*3),
+    GX_MTX_ID_19 = (19*3),
+    GX_MTX_ID_20 = (20*3),
+
+    GX_MTX_ID_IDENTITY = GX_MTX_ID_20
+} gx_mtx_id_t;
 
 /**
  * @brief Flashes the viewport onto the XF settings.
@@ -62,25 +92,38 @@ extern void gx_flash_viewport(float x, float y, float width, float height, float
 extern void gx_flash_projection(const matrix4 mtx, bool is_perspective);
 
 /**
- * @brief Fashes a position matrix in the XF matrix stack
+ * @brief Fashes a matrix to the XF Stack
  * 
- * You then can set this with gx_set_current_psn_matrix or with matrix indices in vertex attributes.
+ * The same matrix memory is shared for geometry matrices and texcoord
+ * transformation matrices. GX_MTX_ID_IDENTITY is automatically flashed
+ * with an identity matrices during initialization and is the default
+ * matrix in texcoord and geometry generations.
+ * 
+ * The IDs themselves address 3x4 matrices, but hardware does support using
+ * 2x4 matrices. In this case, you can fit more matrices. Since having both
+ * 2x4 and 3x4 matrices in the same memory space without an allocator
+ * gets a bit messy, I will leave it up to you to use that if needed.
  * 
  * @param mtx The matrix to load
  * @param index The index of the matrix in the matrix stack.
+ * @param type If type is true, a full 3x4 matrices will be loaded, otherwise its just 2x4.
  */
-extern void gx_flash_pos_matrix(const matrix34 mtx, gx_psnmtx_idx index);
+extern void gx_flash_matrix(const matrix34 mtx, gx_mtx_id_t index, bool type);
 
 /**
  * @brief Fashes a normal matrix into the XF matrix stack
  * 
- * You then can set this with gx_set_current_psn_matrix or with matrix indices in vertex attributes.
+ * Normal matrices have their own separate stack.
  * 
+ * Only the first 10 matrices, GX_MTX_ID_0 through GX_MTX_ID_9,
+ * exist in the normal matrix stack.
+ * 
+ * You then can set this with gx_set_current_psn_matrix or with matrix indices in vertex attributes.
  * 
  * @param mtx The matrix to load
  * @param index The index of the matrix in the matrix stack.
  */
-extern void gx_flash_nrm_matrix(const matrix3 mtx, gx_psnmtx_idx index);
+extern void gx_flash_nrm_matrix(const matrix3 mtx, gx_mtx_id_t index);
 
 /**
  * @brief Sets the current pair of position and normal matrices.
@@ -92,9 +135,9 @@ extern void gx_flash_nrm_matrix(const matrix3 mtx, gx_psnmtx_idx index);
  * 
  * This value will be flushed on the next draw call.
  * 
- * Cleared to zero by gx_initialize()
+ * Cleared to GX_MTX_ID_IDENTITY by gx_initialize()
  */
-extern void gx_set_current_psn_matrix(gx_psnmtx_idx index);
+extern void gx_set_current_psn_matrix(gx_mtx_id_t index);
 
 /* -------------------XF Color Control--------------------- */
 
@@ -138,15 +181,15 @@ typedef enum {
     GX_XF_COLOR_MATERIAL_1 = 0x100D
 } gx_xf_color_t;
 
-typedef enum { // Just the addresses in XF memory.
-    GX_LIGHT_ID_0 = 0x0600,
-    GX_LIGHT_ID_1 = 0x0610,
-    GX_LIGHT_ID_2 = 0x0620,
-    GX_LIGHT_ID_3 = 0x0630,
-    GX_LIGHT_ID_4 = 0x0640,
-    GX_LIGHT_ID_5 = 0x0650,
-    GX_LIGHT_ID_6 = 0x0660,
-    GX_LIGHT_ID_7 = 0x0670
+typedef enum { // Instead of raw XF addresses, indexes, so it can be used in texcoord gens.
+    GX_LIGHT_ID_0,
+    GX_LIGHT_ID_1,
+    GX_LIGHT_ID_2,
+    GX_LIGHT_ID_3,
+    GX_LIGHT_ID_4,
+    GX_LIGHT_ID_5,
+    GX_LIGHT_ID_6,
+    GX_LIGHT_ID_7
 } gx_light_id_t;
 
 typedef struct {
@@ -219,3 +262,121 @@ extern void gx_flash_xf_color(gx_xf_color_t id, uint8_t r, uint8_t g, uint8_t b,
  * @param light Light data structure
  */
 extern void gx_flash_light(gx_light_id_t id, const gx_light_t* light);
+
+/* -------------------XF TexCoord Control--------------------- */
+
+typedef enum {
+    GX_TEXGEN_TYPE_REGULAR,
+    GX_TEXGEN_TYPE_EMBOSS,
+    GX_TEXGEN_TYPE_COLOR_0,
+    GX_TEXGEN_TYPE_COLOR_1
+} gx_texgen_type_t;
+
+typedef enum {
+    GX_TEXGEN_SOURCE_POSITION,
+    GX_TEXGEN_SOURCE_NORMAL,
+    GX_TEXGEN_SOURCE_COLORS,
+    GX_TEXGEN_SOURCE_BINORMAL_T,
+    GX_TEXGEN_SOURCE_BINORMAL_B,
+    GX_TEXGEN_SOURCE_TEX0,
+    GX_TEXGEN_SOURCE_TEX1,
+    GX_TEXGEN_SOURCE_TEX2,
+    GX_TEXGEN_SOURCE_TEX3,
+    GX_TEXGEN_SOURCE_TEX4,
+    GX_TEXGEN_SOURCE_TEX5,
+    GX_TEXGEN_SOURCE_TEX6,
+    GX_TEXGEN_SOURCE_TEX7
+} gx_texgen_source_t;
+
+typedef enum {
+    GX_TEXTURE_MAP_0,
+    GX_TEXTURE_MAP_1,
+    GX_TEXTURE_MAP_2,
+    GX_TEXTURE_MAP_3,
+    GX_TEXTURE_MAP_4,
+    GX_TEXTURE_MAP_5,
+    GX_TEXTURE_MAP_6,
+    GX_TEXTURE_MAP_7
+} gx_texture_map_t;
+
+/**
+ * @brief Set a texture coord count
+ * 
+ * Like gx_set_color_channels, set the number of texcoords that should be generated.
+ * 
+ * @param count Number of color channels to supply the BP/TEV
+*/
+extern void gx_set_texcoord_channels(uint32_t count);
+
+/**
+ * @brief Configures 1 of the 8 texcoord channels.
+ * 
+ * Sets up how a texture coordinate will be transformed from the XF.
+ * 
+ * The source contains what XF input is used for this texture coordinate.
+ * This data is processed according to type, where you can change how colors are processed for example.
+ * 
+ * You can only use sources GX_TEXGEN_SOURCE_TEX0 through GX_TEXGEN_SOURCE_TEX7 for embossing,
+ * since it calculates the embossing source to be the texgen source, but it can only use texcoords 0-7.
+ * 
+ * @param map Texture map to configure
+ * @param gx_texgen_source_t Sets where the data will be pulled from.
+ * @param gx_texgen_type Sets how inputs are processed. As eather normal values, emboss, or from color data
+ * @param projection If set 3x4 texture matrices are used instead. For 3D texcoords.
+ * @param three_component Is set, (X, Y, Z, 1.0) is passed, otherwise its just (X, Y, 1.0, 1.0)
+ * @param embossing_light Light used for embossing.
+*/
+extern void gx_configure_texcoord_channel(gx_texture_map_t map, gx_texgen_source_t source, gx_texgen_type_t type, bool projection, bool three_component, gx_light_id_t embossing_light);
+
+/**
+ * @brief Configure dual texcoords.
+ * 
+ *  * You can only use these on GX_TEXTURE_MAP_0 through GX_TEXTURE_MAP_3
+ * 
+ * These allow to transform texcoords after the main transformation.
+ * This means the main transformation can be used for. i.e. putting geometry into a texture format,
+ * then you can use this to scroll around that texture.
+ * 
+ * Its often that if your doing this, you may want to normalize the inputs as well before the first transformation.
+ * 
+ * @param map Texture map to configure
+ * @param index Matrix index to transform texcoord after transformation
+ * @param normalize Normalize the inputs before transforming 
+*/
+extern void gx_configure_dual_texcoord(gx_texture_map_t map, gx_mtx_id_t index, bool normalize);
+
+/**
+ * @brief Fashes a dual texcoord matrix in the XF matrix stack
+ * 
+ * GX_MTX_ID_0 through GX_MTX_ID_20 is valid for this.
+ * 
+ * @param mtx Matrix to flash
+ * @param index Matrix index to flash into.
+ * @param type If type is true, the full 3x4 will be loaded, otherwise 2x4 will be loaded
+ */
+extern void gx_flash_dual_texcoord_matrix(matrix34 mtx, gx_mtx_id_t index, bool type);
+
+/**
+ * @brief Sets the current texcoord matrix.
+ * 
+ * This is the current matrix used to transform the texcoord generation
+ * input.
+ * 
+ * Set to GX_MTX_ID_IDENTITY by default.
+ * 
+ * Flushed in the next draw call
+ * 
+ * @param map Texture map to set
+ * @param index Matrix index to set it to
+ */
+void gx_set_current_texcoord_matrix(gx_texture_map_t map, gx_mtx_id_t index);
+
+/**
+ * @brief Sets the Dual Texture Coord Enable/Disable Register
+ * 
+ * If disabled, as is by default,
+ * non will be transformed.
+ * 
+ * If enabled, all dual tex coords will be transformed.
+ */
+void gx_flash_enable_dual_texcoord(bool enable);
