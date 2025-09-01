@@ -23,7 +23,7 @@
 #include "utah_teapot.h"
 
 framebuffer_t frame_buffer ALIGN(512);
-uint8_t fifo_buffer[1024*1024*2] ALIGN(32);
+uint8_t fifo_buffer[1024*1024*3] ALIGN(32);
 
 // Set to true so that on the next vblank
 // period we copy the new frame buffer
@@ -44,7 +44,7 @@ static void setup_scene() {
 
 static void scene_light_0() {
     gx_light_t light;
-    light.color = 0x555555FF;
+    light.color = 0xFFFFFFFF;
 
     light.position = vec3_new(0, 5.0, 2.0);
     light.direction = vec3_new(0, 1.0, 0.2);
@@ -176,23 +176,69 @@ static void scene_light_6(float time) {
     gx_flash_light(GX_LIGHT_ID_6, &light);
 }
 
+static void setup_cool_tev_lighting() {
+    gx_flash_xf_color(GX_XF_COLOR_AMBIENT_0, 64, 64, 64, 255);
+    gx_flash_xf_color(GX_XF_COLOR_MATERIAL_0, 255, 255, 255, 255);
+
+    gx_configure_color_channel(GX_COLOR_CHANNEL_COLOR0, GX_LIGHT_BIT_0, true, false, false, GX_DIFFUSE_CLAMPED, GX_ATTENUATION_MODE_SPOTLIGHT);
+
+    gx_flash_tev_register_color(GX_TEV_IO_REGISTER_0, 25, 35, 204, 255); // Hot Color
+    gx_flash_tev_register_color(GX_TEV_IO_REGISTER_1, 255, 255, 255, 255); // Cold Color
+
+    gx_tev_stage_t texturizer;
+    gx_initialize_tev_stage(&texturizer);
+    gx_set_tev_stage_color_input(&texturizer, GX_TEV_IO_REGISTER_0, GX_TEV_IO_REGISTER_1, GX_TEV_IO_TEXTURE, GX_TEV_IO_ZERO);
+
+    gx_tev_stage_t lighting;
+    gx_initialize_tev_stage(&lighting);
+    gx_set_tev_stage_color_input(&lighting, GX_TEV_IO_ZERO, GX_TEV_IO_PREVIOUS, GX_TEV_IO_RASTERIZER, GX_TEV_IO_ZERO);
+
+    gx_set_tev_stages(2);
+    gx_flash_tev_stage(GX_TEV_STAGE_0, &texturizer);
+    gx_flash_tev_stage(GX_TEV_STAGE_1, &lighting);
+}
+
+static void setup_texturing() {
+    // Generate texture data
+    gx_texture_t cool_texture;
+    gx_initialize_texture(&cool_texture, utah_teapot_texture_data, GX_TEXTURE_FORMAT_I8,
+        utah_teapot_texture_width, utah_teapot_texture_height, GX_WRAP_REPEAT, GX_WRAP_REPEAT, false);
+    
+    gx_flash_texture(GX_TEXTURE_MAP_0, &cool_texture);
+
+    gx_configure_texcoord_channel(GX_TEXTURE_MAP_0, GX_TEXGEN_SOURCE_TEX0, GX_TEXGEN_TYPE_REGULAR, false, false, 0);
+
+    gx_set_texcoord_channels(1);
+
+    matrix34 scale_mtx;
+    vec3 scale = vec3_new(1.0 / utah_teapot_model_texcoords_scale, -1.0 / utah_teapot_model_texcoords_scale, 1.0 / utah_teapot_model_texcoords_scale);
+    matrix34_scale(scale_mtx, &scale);
+    gx_flash_matrix(scale_mtx, GX_MTX_ID_1, false);
+    gx_set_current_texcoord_matrix(GX_TEXTURE_MAP_0, GX_MTX_ID_1);
+}
+
 static void setup_vertex_formats() {
     // Vertex descriptors
     gx_vtxdesc_set(GX_VTXDESC_POSITION, GX_VTXATTR_DATA_DIRECT);
     gx_vtxdesc_set(GX_VTXDESC_NORMAL, GX_VTXATTR_DATA_DIRECT);
+    gx_vtxdesc_set(GX_VTXDESC_TEXCOORD0, GX_VTXATTR_DATA_DIRECT);
 
     // Vertex Attribute 0
     gx_vtxfmtattr_set(0, GX_VTXDESC_POSITION, GX_VTXATTR_POS_XYZ, GX_VTXATTR_S16, 15);
     gx_vtxfmtattr_set(0, GX_VTXDESC_NORMAL, GX_VTXATTR_NRM_XYZ, GX_VTXATTR_S16, 1);
+    gx_vtxfmtattr_set(0, GX_VTXDESC_TEXCOORD0, GX_VTXATTR_TEX_ST, GX_VTXATTR_S16, 0);
 
     // Generate 1 color channel
     gx_set_color_channels(1);
 
     // Lighting
-    gx_flash_xf_color(GX_XF_COLOR_AMBIENT_0, 12, 12, 12, 255);
-    gx_flash_xf_color(GX_XF_COLOR_MATERIAL_0, 230, 229, 225, 255);
+    //gx_flash_xf_color(GX_XF_COLOR_AMBIENT_0, 12, 12, 12, 255);
+    //gx_flash_xf_color(GX_XF_COLOR_MATERIAL_0, 230, 229, 225, 255);
 
-    gx_configure_color_channel(GX_COLOR_CHANNEL_COLOR0, GX_LIGHT_BIT_0 | GX_LIGHT_BIT_1 | GX_LIGHT_BIT_2 | GX_LIGHT_BIT_3 | GX_LIGHT_BIT_4 | GX_LIGHT_BIT_5 | GX_LIGHT_BIT_6, true, false, false, GX_DIFFUSE_CLAMPED, GX_ATTENUATION_MODE_SPOTLIGHT);
+    //gx_configure_color_channel(GX_COLOR_CHANNEL_COLOR0, GX_LIGHT_BIT_0 | GX_LIGHT_BIT_1 | GX_LIGHT_BIT_2 | GX_LIGHT_BIT_3 | GX_LIGHT_BIT_4 | GX_LIGHT_BIT_5 | GX_LIGHT_BIT_6, true, false, false, GX_DIFFUSE_CLAMPED, GX_ATTENUATION_MODE_SPOTLIGHT);
+
+    setup_cool_tev_lighting();
+    setup_texturing();
 }
 
 void setup_teapot_matrix(float time)
@@ -214,7 +260,7 @@ void setup_teapot_matrix(float time)
     matrix34_multiply(model, translation, rotation);
 
     // --- Position matrix ---
-    gx_flash_pos_matrix(model, GX_PSNMTX_0);
+    gx_flash_matrix(model, GX_MTX_ID_0, true);
 
     // --- Normal matrix ---
     // Extract 3x3 from model, invert-transpose for normals
@@ -223,10 +269,10 @@ void setup_teapot_matrix(float time)
     matrix3_inverse(nrm, nrm);
     matrix3_transpose(nrm, nrm);
 
-    gx_flash_nrm_matrix(nrm, GX_PSNMTX_0);
+    gx_flash_nrm_matrix(nrm, GX_MTX_ID_0);
 
     // Set position and normal matrix pair
-    gx_set_current_psn_matrix(GX_PSNMTX_0);
+    gx_set_current_psn_matrix(GX_MTX_ID_0);
 }
 
 int main() {
@@ -246,6 +292,7 @@ int main() {
     gx_initialize(&fifo, profile);
 
     setup_vertex_formats();
+    setup_texturing();
 
     setup_scene();
 

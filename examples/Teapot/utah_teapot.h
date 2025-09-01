@@ -25,5 +25,11 @@ extern const int16_t utah_teapot_model_texcoords[];
 extern const int16_t utah_teapot_model_normals[];
 extern const uint16_t utah_teapot_model_indices[];
 extern const uint16_t utah_teapot_model_indices_count;
+extern const float utah_teapot_model_texcoords_scale;
+
+// Texture Data
+extern const uint16_t utah_teapot_texture_width;
+extern const uint16_t utah_teapot_texture_height;
+extern const uint8_t utah_teapot_texture_data[];
 
 extern void utah_teapot_draw();

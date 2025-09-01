@@ -17,19 +17,25 @@ void utah_teapot_draw() {
     int vertices = utah_teapot_model_indices_count;
     gx_begin(GX_TRIANGLES, 0, vertices);
     for(int i = 0; i < vertices; i++) {
-        int j = utah_teapot_model_indices[i] * 3;
+        int j3 = utah_teapot_model_indices[i] * 3;
+        int j2 = utah_teapot_model_indices[i] * 2;
 
         gxVertex3s(
-            utah_teapot_model_positions[j + 0],
-            utah_teapot_model_positions[j + 1],
-            utah_teapot_model_positions[j + 2]
+            utah_teapot_model_positions[j3 + 0],
+            utah_teapot_model_positions[j3 + 1],
+            utah_teapot_model_positions[j3 + 2]
         );
 
         gxNormal3s(
-            utah_teapot_model_normals[j + 0],
-            utah_teapot_model_normals[j + 1],
-            utah_teapot_model_normals[j + 2]
-        )
+            utah_teapot_model_normals[j3 + 0],
+            utah_teapot_model_normals[j3 + 1],
+            utah_teapot_model_normals[j3 + 2]
+        );
+
+        gxTexCoord2s(
+            utah_teapot_model_texcoords[j2 + 0],
+            utah_teapot_model_texcoords[j2 + 1]
+        );
     }
     gx_end();
 }
