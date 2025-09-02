@@ -73,6 +73,13 @@ StackType_t * pxPortInitialiseStack( StackType_t * pxTopOfStack,
                                      TaskFunction_t pxCode,
                                      void * pvParameters )
 {
+
+    /// BUGFIX:
+    // The PPC ABI has a red zone where task will write above the top of the stack.
+    // If you dont account for this when configuring the stack pointer. It can corrupt
+    // neighboring data.
+    pxTopOfStack -= 36 / 4;
+
     pxTopOfStack -= 464/4;
     exception_context_t* task_context = (exception_context_t*)pxTopOfStack;
 
