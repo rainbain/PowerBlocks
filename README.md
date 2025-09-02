@@ -16,13 +16,14 @@ Supported:
  2. FreeRTOS Kernel
  3. Video Interface
  4. IOS Communications
+ 5. Core GX implementation.
 
 Work In Progress:
- 1. Graphics
+ 1. WiiMote Support
 
 Not Started Yet:
- 1. WiiMote Support
- 2. SDIO + File System Support
- 3. Audio Interface
+ 1. SDIO + File System Support
+ 2. Audio Interface
+ 3. Feature Complete GX Implementation
  4. Disk Interface
  5. WiFi Support
