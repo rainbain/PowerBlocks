@@ -27,3 +27,5 @@ Not Started Yet:
  3. Feature Complete GX Implementation
  4. Disk Interface
  5. WiFi Support
+
+ For a more in-depth todo for known missing features of supported functionality check: [TODOS.md](docs/TODOS.md).
