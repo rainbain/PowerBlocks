@@ -366,6 +366,10 @@ static void gx_irq_fifo() {
 
         // Clear it
         CP_CLEAR = CP_CLEAR_FIFO_OVERFLOW;
+
+        // Enable Underflow Interrupt
+        CP_CONTROL = CP_CONTROL_FIFO_READ | CP_CONTROL_GP_LINK_ENABLE |
+                 CP_CONTROL_FIFO_UNDERFLOW_IRQ_ENABLE;
     }
 
     if(cp_status & CP_STATUS_GX_FIFO_UNDERFLOW) {
@@ -374,6 +378,10 @@ static void gx_irq_fifo() {
 
         // Clear it
         CP_CLEAR = CP_CLEAR_FIFO_UNDERFLOW;
+
+        // Enable Overflow Interrupt
+        CP_CONTROL = CP_CONTROL_FIFO_READ | CP_CONTROL_GP_LINK_ENABLE |
+                 CP_CONTROL_FIFO_OVERFLOW_IRQ_ENABLE;
     }
 }
 
@@ -524,8 +532,9 @@ void gx_initialize(const gx_fifo_t* fifo, const video_profile_t* video_profile) 
 
     // It will read commands and pass them on to the pipeline.
     // We also want to generate interrupts to pause/resume the render thread
+    // But only the high one so far
     CP_CONTROL = CP_CONTROL_FIFO_READ | CP_CONTROL_GP_LINK_ENABLE |
-                 CP_CONTROL_FIFO_OVERFLOW_IRQ_ENABLE | CP_CONTROL_FIFO_UNDERFLOW_IRQ_ENABLE;
+                 CP_CONTROL_FIFO_OVERFLOW_IRQ_ENABLE;
 
     // GX FIFO seems to ignore some of the first commands
     // May be an attaching/detaching issue. This helps though.
