@@ -68,6 +68,12 @@
 // I like static alloc functions for debugging and minimizing fragmentation
 #define configSUPPORT_STATIC_ALLOCATION 1
 
+// I like having timers! We use them a bit
+#define configUSE_TIMERS             1
+#define configTIMER_TASK_PRIORITY    (configMAX_PRIORITIES - 1)
+#define configTIMER_QUEUE_LENGTH     10
+#define configTIMER_TASK_STACK_DEPTH (configMINIMAL_STACK_SIZE * 2)
+
 // Feature enable/disable
 #define configUSE_TASK_NOTIFICATIONS   1
 #define configUSE_MUTEXES              1
@@ -89,7 +95,7 @@
 #define INCLUDE_uxTaskGetStackHighWaterMark 0
 #define INCLUDE_xTaskGetIdleTaskHandle      0
 #define INCLUDE_eTaskGetState               0
-#define INCLUDE_xTimerPendFunctionCall      0
+#define INCLUDE_xTimerPendFunctionCall      1
 #define INCLUDE_xTaskAbortDelay             0
 #define INCLUDE_xTaskGetHandle              0
 #define INCLUDE_xTaskResumeFromISR          1

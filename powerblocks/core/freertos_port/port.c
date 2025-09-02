@@ -38,6 +38,19 @@ void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
     *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
 }
 
+// Same static allocation situation
+static StaticTask_t timerTaskTCB;
+static StackType_t timerTaskStack[ configTIMER_TASK_STACK_DEPTH ];
+
+void vApplicationGetTimerTaskMemory( StaticTask_t **ppxTimerTaskTCBBuffer,
+                                     StackType_t **ppxTimerTaskStackBuffer,
+                                     uint32_t *pulTimerTaskStackSize )
+{
+    *ppxTimerTaskTCBBuffer   = &timerTaskTCB;
+    *ppxTimerTaskStackBuffer = timerTaskStack;
+    *pulTimerTaskStackSize   = configTIMER_TASK_STACK_DEPTH;
+}
+
 BaseType_t xPortStartScheduler( void )
 {
     // Set tick time
