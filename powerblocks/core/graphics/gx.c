@@ -18,6 +18,7 @@
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "timers.h"
 
 #include <string.h>
 
@@ -297,6 +298,9 @@ static const char* TAB = "GX";
 #define BIT(v, bit, set) ((set) ? (v | bit) : (v & ~bit))
 
 static struct {
+    // Thread that is suspended/resumed in accordance to FIFO high/low watermarks
+    xTaskHandle render_thread;
+
     // We save the register states then play them out to hardware when their needed.
     // This is similar to what libogc does. The point being to minimize pipeline overhead
     // and keep compatibility with libogc programs.
@@ -325,6 +329,23 @@ static struct {
 static StaticSemaphore_t semaphores_static;
 static SemaphoreHandle_t gx_pe_finish_semaphore; 
 
+// Helper functions for resuming and suspending the render thread
+// In FreeRTOS you can not modify states of threads like vTaskSuspend form
+// an ISR and expect deterministic behaver by design.
+// So the best way is to schedule the FreeRTOS timer daemon to do it for you
+
+static void gx_daemon_suspend_render_thread(void* unused_1, uint32_t unused_2) {
+    if(gx_state.render_thread != NULL) {
+        vTaskSuspend(gx_state.render_thread);
+    }
+}
+
+static void gx_daemon_resume_render_thread(void* unused_1, uint32_t unused_2) {
+    if(gx_state.render_thread != NULL) {
+        vTaskResume(gx_state.render_thread);
+    }
+}
+
 // Called when the pixel engine finishes its work.
 static void gx_irq_pe_finish(exception_irq_type_t irq) {
     // Acknowledge.
@@ -332,6 +353,28 @@ static void gx_irq_pe_finish(exception_irq_type_t irq) {
 
     // Alert waiting task of draw finish
     xSemaphoreGiveFromISR(gx_pe_finish_semaphore, &exception_isr_context_switch_needed);
+}
+
+// Called when fifo interrupts are incountred
+static void gx_irq_fifo() {
+    uint16_t cp_status = CP_STATUS;
+
+    // FIFO Overflow Interrupt
+    if(cp_status & CP_STATUS_GX_FIFO_OVERFLOW) {
+        // Alert daemon to suspend render thread
+        xTimerPendFunctionCallFromISR(gx_daemon_suspend_render_thread, NULL, 0, &exception_isr_context_switch_needed);
+
+        // Clear it
+        CP_CLEAR = CP_CLEAR_FIFO_OVERFLOW;
+    }
+
+    if(cp_status & CP_STATUS_GX_FIFO_UNDERFLOW) {
+        // Alert daemon to resume render thread
+        xTimerPendFunctionCallFromISR(gx_daemon_resume_render_thread, NULL, 0, &exception_isr_context_switch_needed);
+
+        // Clear it
+        CP_CLEAR = CP_CLEAR_FIFO_UNDERFLOW;
+    }
 }
 
 // This updates the VCD.
@@ -472,12 +515,17 @@ void gx_initialize(const gx_fifo_t* fifo, const video_profile_t* video_profile) 
     // This should be set later on, just need to make sure!
     memset(&gx_state, 0, sizeof(gx_state));
 
+    // Set current render thread
+    gx_set_render_thread(xTaskGetCurrentTaskHandle());
+
     // Set the current hardware fifo
     // Will be needed to configure later on
     gx_fifo_set(fifo);
 
     // It will read commands and pass them on to the pipeline.
-    CP_CONTROL = CP_CONTROL_FIFO_READ | CP_CONTROL_GP_LINK_ENABLE;
+    // We also want to generate interrupts to pause/resume the render thread
+    CP_CONTROL = CP_CONTROL_FIFO_READ | CP_CONTROL_GP_LINK_ENABLE |
+                 CP_CONTROL_FIFO_OVERFLOW_IRQ_ENABLE | CP_CONTROL_FIFO_UNDERFLOW_IRQ_ENABLE;
 
     // GX FIFO seems to ignore some of the first commands
     // May be an attaching/detaching issue. This helps though.
@@ -497,8 +545,9 @@ void gx_initialize(const gx_fifo_t* fifo, const video_profile_t* video_profile) 
     // Create semaphore for pe finish (draw done, begin copy)
     gx_pe_finish_semaphore = xSemaphoreCreateCountingStatic(4, 0, &semaphores_static);
 
-    // Install interrupt handler
+    // Install interrupt handlers
     exceptions_install_irq(gx_irq_pe_finish, EXCEPTION_IRQ_TYPE_PE_FINISH);
+    exceptions_install_irq(gx_irq_fifo, EXCEPTION_IRQ_TYPE_FIFO);
 
     // Enable interrupts
     PE_ISR = PE_ISR_FINISH_ENABLE;
@@ -621,7 +670,7 @@ void gx_initialize_video(const video_profile_t* video_profile) {
     gx_set_copy_filter(video_profile->copy_pattern, video_profile->copy_filer);
 }
 
-void gx_fifo_create(gx_fifo_t* fifo, void* fifo_buffer, uint32_t fifo_buffer_size) {
+void gx_fifo_initialize(gx_fifo_t* fifo, void* fifo_buffer, uint32_t fifo_buffer_size) {
     // Clear that thing
     memset(fifo_buffer, 0, fifo_buffer_size);
 
@@ -630,8 +679,8 @@ void gx_fifo_create(gx_fifo_t* fifo, void* fifo_buffer, uint32_t fifo_buffer_siz
     
     fifo->base_address = SYSTEM_MEM_PHYSICAL(fifo_buffer);
     fifo->end_address = fifo->base_address + fifo_buffer_size - 4;
-    fifo->high_watermark = 0;
-    fifo->low_watermark = 0;
+    fifo->high_watermark = fifo_buffer_size - GX_FIFO_WATERMARK;
+    fifo->low_watermark = GX_FIFO_WATERMARK;
     fifo->distance = 0;
     fifo->write_head = fifo->base_address;
     fifo->read_head = fifo->base_address;
@@ -887,6 +936,10 @@ void gx_draw_done() {
 
     // Wait for it to signal draw done
     xSemaphoreTake(gx_pe_finish_semaphore, portMAX_DELAY);
+}
+
+void gx_set_render_thread(TaskHandle_t task) {
+    gx_state.render_thread = task;
 }
 
 void gx_set_clear_color(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {

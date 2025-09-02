@@ -23,7 +23,7 @@
 #include "utah_teapot.h"
 
 framebuffer_t frame_buffer ALIGN(512);
-uint8_t fifo_buffer[1024*1024*3] ALIGN(32);
+uint8_t fifo_buffer[GX_FIFO_MINIMUM_SIZE] ALIGN(32);
 
 // Set to true so that on the next vblank
 // period we copy the new frame buffer
@@ -288,7 +288,7 @@ int main() {
     // Initialize the graphics API
     const video_profile_t* profile = video_get_profile(tv_mode);
     gx_fifo_t fifo;
-    gx_fifo_create(&fifo, fifo_buffer, sizeof(fifo_buffer));
+    gx_fifo_initialize(&fifo, fifo_buffer, sizeof(fifo_buffer));
     gx_initialize(&fifo, profile);
 
     setup_vertex_formats();

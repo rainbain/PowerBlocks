@@ -18,6 +18,9 @@
 #include "framebuffer.h"
 #include "video.h"
 
+#include "FreeRTOS.h"
+#include "task.h"
+
 #define GX_WPAR_ADDRESS 0xCC008000
 
 // The write gather pipeline will collect writes to these and
@@ -29,6 +32,10 @@
 #define GX_WPAR_S16 (*(volatile int16_t*)GX_WPAR_ADDRESS)
 #define GX_WPAR_S32 (*(volatile int32_t*)GX_WPAR_ADDRESS)
 #define GX_WPAR_F32 (*(volatile float*)GX_WPAR_ADDRESS)
+
+// Some useful defines regarding GX FIFO Spec
+#define GX_FIFO_MINIMUM_SIZE (64 * 1024) // Standard small fifo size
+#define GX_FIFO_WATERMARK (16 * 1024) // How many bytes to too full and too low level
 
 #include "gx_xf.h"
 #include "gx_tev.h"
@@ -364,7 +371,7 @@ extern void gx_initialize_video(const video_profile_t* video_profile);
  * @param fifo_buffer Buffer to put data into. 32 byte aligned
  * @param fifo_buffer_size Size of the buffer. 32 byte aligned
  */
-extern void gx_fifo_create(gx_fifo_t* fifo, void* fifo_buffer, uint32_t fifo_buffer_size);
+extern void gx_fifo_initialize(gx_fifo_t* fifo, void* fifo_buffer, uint32_t fifo_buffer_size);
 
 /**
  * @brief Sets the current FIFO
@@ -420,7 +427,7 @@ extern uint32_t gx_efb_peak(uint32_t x, uint32_t y);
  * @param fifo_buffer Buffer to put data into. 32 byte aligned
  * @param fifo_buffer_size Size of the buffer. 32 byte aligned
  */
-extern void gx_fifo_create(gx_fifo_t* fifo, void* fifo_buffer, uint32_t fifo_buffer_size);
+extern void gx_fifo_initialize(gx_fifo_t* fifo, void* fifo_buffer, uint32_t fifo_buffer_size);
 
 /**
  * @brief Clears out all vertex descriptions.
@@ -510,6 +517,22 @@ extern void gx_begin(gx_primitive_t primitive, uint8_t attribute, uint16_t count
  * flush it, then sleep the current thread until its done
 */
 extern void gx_draw_done();
+
+/**
+ * @brief Sets the current render thread for suspension.
+ * 
+ * When the GX FIFO is too full, it will suspend the graphics
+ * thread and resume it once it clears out a bit.
+ * 
+ * gx_initialize sets this to the current thread. If you plan
+ * to call GX functions outside the thread to called gx_initialize.
+ * You may want to set it here.
+ * 
+ * You can also set it to null and bypass this functionality.
+ * 
+ * @param task Handle to the task.
+ */
+extern void gx_set_render_thread(TaskHandle_t task);
 
 /**
  * @brief Sets the background color when copying framebuffers.
