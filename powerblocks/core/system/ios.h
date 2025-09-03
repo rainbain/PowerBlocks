@@ -34,6 +34,8 @@ typedef struct {
     uint32_t size;
 } ios_ioctlv_t;
 
+/// TODO: Explore and properly document what needs alignment and what does not
+
 /**
  * @brief Initializes IOS.
  * 
@@ -116,6 +118,10 @@ extern int ios_ioctl(int file_handle, int ioctl, void* buffer_in, int in_size, v
  * @brief Send multiple IO ctrl buffers.
  * 
  * Send multiple IO ctrl buffers.
+ * 
+ * The vector array itself does not need alignment
+ * since this function makes its own copy of the vector table
+ * when converting the addresses to physical.
  * 
  * @param ioctl I/O Command Enum
  * @param buffer_in Input data to command

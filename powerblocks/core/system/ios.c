@@ -131,30 +131,35 @@ int ios_ioctl(int file_handle, int ioctl, void* buffer_in, int in_size, void* bu
 }
 
 int ios_ioctlv(int file_handle, int ioctl, int in_size, int io_size, ios_ioctlv_t* argv) {
-    alignas(32) ipc_message message;
+    const int total = in_size + io_size;
 
+    // Local copy for physical pointers
+    alignas(32) ios_ioctlv_t physv[total];
+
+    alignas(32) ipc_message message;
     message.command = IOS_COMMAND_IOCTLV;
     message.file_handle = file_handle;
     message.ioctlv.ioctl = ioctl;
     message.ioctlv.argcin = in_size;
     message.ioctlv.argcio = io_size;
-    message.ioctlv.pairs = (void*)SYSTEM_MEM_PHYSICAL(argv);
+    message.ioctlv.pairs = (void*)SYSTEM_MEM_PHYSICAL(physv);
 
-    // Make sure the data is visible to hardware.
-    for(int i = 0; i < in_size + io_size; i++) {
+    // Flush and convert pointers to physical in local copy
+    for (int i = 0; i < total; i++) {
         system_flush_dcache(argv[i].data, argv[i].size);
-        argv[i].data = (void*)SYSTEM_MEM_PHYSICAL(argv[i].data);
+        physv[i].data = (void*)SYSTEM_MEM_PHYSICAL(argv[i].data);
+        physv[i].size = argv[i].size;
     }
 
-    system_flush_dcache(argv, (in_size + io_size) * sizeof(ios_ioctlv_t));
+    // Flush the vector table itself
+    system_flush_dcache(physv, sizeof(physv));
 
     int ret = ipc_request(&message);
-    if(ret < 0)
+    if (ret < 0)
         return ret;
-    
-    // Invalidate cache so we can see it
-    for(int i = in_size; i < in_size + io_size; i++) {
-        argv[i].data = (void*)SYSTEM_MEM_CACHED(argv[i].data);
+
+    // Invalidate only IO (output) buffers using original virtual pointers
+    for (int i = in_size; i < total; i++) {
         system_invalidate_dcache(argv[i].data, argv[i].size);
     }
 
