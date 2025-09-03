@@ -4,7 +4,7 @@ PowerBlocks is a fully independent SDK for Wii homebrew development.
 This project is currently deep within development. Please feel free to contribute and check out [CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ## Getting Started
-You can use a release of the SDK from the releases section, or build from source. For the windows setup its recommended to use MSYS2. To build from source, check BUILDING.md.
+You can use a release of the SDK from the releases section, or build from source. For the windows setup its recommended to use `MSYS2`. To build from source, check [BUILDING.md](docs/BUILDING.md).
 
 Once a version of the SDK is ready. Check out the examples folder.
 
