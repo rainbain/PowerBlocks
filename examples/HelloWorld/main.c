@@ -3,22 +3,16 @@
 #include "powerblocks/core/system/ios_settings.h"
 
 #include "powerblocks/core/graphics/video.h"
-#include "powerblocks/core/graphics/gx.h"
 
 #include "powerblocks/core/utils/fonts.h"
 #include "powerblocks/core/utils/console.h"
-
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "task.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdalign.h>
 #include <math.h>
 
-framebuffer_t frame_buffer __attribute__((aligned(512)));
-uint8_t fifo_buffer[4096] __attribute__((aligned(32)));
+framebuffer_t frame_buffer ALIGN(512);
 
 int main() {
     // Initialize IOS. Must be done first as many thing use it
