@@ -70,6 +70,7 @@ extern int ios_close(int file_handle);
  * @param file_handle File Handle
  * @param buffer Buffer to read into
  * @param size Number of bytes to read
+ * @return Negative if error.
  */
 extern int ios_read(int file_handle, void* buffer, int size);
 
@@ -81,6 +82,7 @@ extern int ios_read(int file_handle, void* buffer, int size);
  * @param file_handle File Handle
  * @param buffer Buffer with data to write
  * @param size Number of bytes to write
+ * @return Negative if error.
  */
 extern int ios_write(int file_handle, void* buffer, int size);
 
@@ -92,6 +94,7 @@ extern int ios_write(int file_handle, void* buffer, int size);
  * @param file_handle File Handle
  * @param where How much to offset from a position
  * @param whence Reference point enum for where in the file.
+ * @return Negative if error.
  */
 extern int ios_seek(int file_handle, int where, int whence);
 
@@ -105,6 +108,7 @@ extern int ios_seek(int file_handle, int where, int whence);
  * @param in_size Size of data coming in
  * @param buffer_io Output data of command
  * @param io_size Size of output data
+ * @return Negative if error.
  */
 extern int ios_ioctl(int file_handle, int ioctl, void* buffer_in, int in_size, void* buffer_io, int io_size);
 
@@ -118,5 +122,6 @@ extern int ios_ioctl(int file_handle, int ioctl, void* buffer_in, int in_size, v
  * @param in_size Size of data coming in
  * @param buffer_io Output data of command
  * @param io_size Size of output data
+ * @return Negative if error.
  */
 extern int ios_ioctlv(int file_handle, int ioctl, int in_size, int io_size, ios_ioctlv_t* argv);
