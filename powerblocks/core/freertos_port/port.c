@@ -69,6 +69,14 @@ void vPortEndScheduler( void )
 {
 }
 
+/// BUGFIX: Make sure returning from a task does not crash.
+// If we ever return from a task for some reason, end up here at this place
+static void on_task_return() {
+    while(true) {
+        vTaskDelay(portMAX_DELAY);
+    }
+}
+
 StackType_t * pxPortInitialiseStack( StackType_t * pxTopOfStack,
                                      TaskFunction_t pxCode,
                                      void * pvParameters )
@@ -87,6 +95,7 @@ StackType_t * pxPortInitialiseStack( StackType_t * pxTopOfStack,
 
     task_context->srr0 = (uint32_t)pxCode; // PC after exception return
     task_context->srr1 = 0x0001B032;       // Exception state, also will enable interrupts when task begins.
+    task_context->lr = (uint32_t)on_task_return;     // Where to go on return.
 
     return pxTopOfStack;
 }
