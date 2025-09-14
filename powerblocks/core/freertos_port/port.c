@@ -96,6 +96,7 @@ StackType_t * pxPortInitialiseStack( StackType_t * pxTopOfStack,
     task_context->srr0 = (uint32_t)pxCode; // PC after exception return
     task_context->srr1 = 0x0001B032;       // Exception state, also will enable interrupts when task begins.
     task_context->lr = (uint32_t)on_task_return;     // Where to go on return.
+    task_context->r3 = (uint32_t)pvParameters; // First argument of function
 
     return pxTopOfStack;
 }
