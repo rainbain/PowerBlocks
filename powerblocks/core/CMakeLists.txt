@@ -20,6 +20,7 @@ add_library(
 
     utils/fonts.c
     utils/console.c
+    utils/log.c
     utils/crash_handler.c
     utils/math/arith64.c
     utils/math/floatdidf.c
@@ -27,6 +28,10 @@ add_library(
     utils/math/matrix4.c
     utils/math/matrix34.c
     utils/math/matrix3.c
+
+    bluetooth/hci.c
+    bluetooth/l2cap.c
+    bluetooth/bltools.c
 
     freertos_port/port.c
     ${FREERTOS_PATH}/tasks.c
