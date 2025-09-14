@@ -8,11 +8,15 @@
 #include "powerblocks/core/utils/console.h"
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <stdalign.h>
 #include <math.h>
 
 framebuffer_t frame_buffer ALIGN(512);
+
+void retrace_callback() {
+    // Make it so we can see the framebuffer changes
+    system_flush_dcache(&frame_buffer, sizeof(frame_buffer));
+}
+
 
 int main() {
     // Initialize IOS. Must be done first as many thing use it
@@ -26,11 +30,14 @@ int main() {
     console_initialize(&frame_buffer, &fonts_ibm_iso_8x16);
     video_set_framebuffer(&frame_buffer);
 
+    // Set the retrace callback to flush the framebuffer before drawing.
+    video_set_retrace_callback(retrace_callback);
+
     // Create Blue Background
-    framebuffer_fill_rgba(&frame_buffer, 0x7ee5f2ff, vec2i_new(0,0), vec2i_new(VIDEO_WIDTH, VIDEO_HEIGHT));
+    framebuffer_fill_rgba(&frame_buffer, 0x000000FF, vec2i_new(0,0), vec2i_new(VIDEO_WIDTH, VIDEO_HEIGHT));
 
     // Back Text To Black, Blue Background
-    console_set_text_color(0x000000FF, 0x7ee5f2ff);
+    console_set_text_color(0xFFFFFFFF, 0x000000FF);
 
     // print super cool hello message
     printf("\n\n\n");
