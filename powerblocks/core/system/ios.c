@@ -123,9 +123,6 @@ int ios_ioctl(int file_handle, int ioctl, void* buffer_in, int in_size, void* bu
     int ret = ipc_request(&message);
     if(ret < 0)
         return ret;
-    
-    // Invalidate io buffer so we can see it
-    system_invalidate_dcache(buffer_io, io_size);
 
     return ret;
 }
@@ -155,13 +152,6 @@ int ios_ioctlv(int file_handle, int ioctl, int in_size, int io_size, ios_ioctlv_
     system_flush_dcache(physv, sizeof(physv));
 
     int ret = ipc_request(&message);
-    if (ret < 0)
-        return ret;
-
-    // Invalidate only IO (output) buffers using original virtual pointers
-    for (int i = in_size; i < total; i++) {
-        system_invalidate_dcache(argv[i].data, argv[i].size);
-    }
 
     return ret;
 }
