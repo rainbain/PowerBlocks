@@ -17,6 +17,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#include "utils/log.h"
+
 #include "exceptions.h"
 
 // Main of the application of the user.
@@ -53,6 +55,8 @@ void system_initialize() {
     // Ensure interrupts are disabled
     uint32_t level;
     SYSTEM_DISABLE_ISR(level);
+
+    log_initialize();
 
     // Install exception handlers
     exceptions_install_vector();
