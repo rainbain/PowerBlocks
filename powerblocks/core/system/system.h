@@ -64,7 +64,7 @@
  *  Converts a cached address into a uncached virtual address.
  *  This is done by setting the MSB nibble.
  */
-#define SYSTEM_MEM_UNCACHED(address) (((uint32_t)(address) & 0x0FFFFFFF) | 0xC0000000)
+#define SYSTEM_MEM_UNCACHED(address) (((uint32_t)(address) & 0x1FFFFFFF) | 0xC0000000)
 
  /** @def SYSTEM_MEM_CACHED
  *  @brief Convert a memory address into a cached virtual address.
@@ -72,7 +72,7 @@
  *  Converts a cached address into a cached virtual address.
  *  This is done by setting the MSB nibble.
  */
-#define SYSTEM_MEM_CACHED(address) (((uint32_t)(address) & 0x0FFFFFFF) | 0x80000000)
+#define SYSTEM_MEM_CACHED(address) (((uint32_t)(address) & 0x1FFFFFFF) | 0x80000000)
 
  /** @def SYSTEM_MEM_PHYSICAL
  *  @brief Convert a memory address into a physical address.
@@ -80,7 +80,14 @@
  *  Converts a cached address into a physical address.
  *  This is done by setting the MSB nibble.
  */
-#define SYSTEM_MEM_PHYSICAL(address) ((uint32_t)(address) & 0x0FFFFFFF)
+#define SYSTEM_MEM_PHYSICAL(address) ((uint32_t)(address) & 0x1FFFFFFF)
+
+ /** @def SYSTEM_MEM2_FUNC
+ *  @brief Tag a function to be placed in mem2.
+ *
+ *  Makes it so this code will be in mem2.
+ */
+#define MEM2 __attribute__((section(".mem2")))
 
  /** @def SYSTEM_MAIN_STACK_SIZE
  *  @brief Size of the stack of the application main.
@@ -190,6 +197,20 @@
 #define ASSERT(x) \
     if((x) == 0) { \
         SYSCALL_ASSERT(__LINE__, __FILE__); \
+    }
+
+ /** @def ASSERT_OUT_OF_MEMORY
+ * @brief Triggers a out of memory assertion if the condition fails.
+ * 
+ * Normally out of memory errors are propagated up as a return value.
+ * But in the event a driver, or some critical system fails to allocate the heap
+ * at runtime, and must crash, then this assertion can be used.
+ * 
+ * Games can also use it if they find a memory condition fatal for whatever reason.
+ */
+#define ASSERT_OUT_OF_MEMORY(x) \
+    if((x) == 0) { \
+        SYSCALL_OUT_OF_MEMORY(__LINE__, __FILE__); \
     }
 
  /** @def ALIGN

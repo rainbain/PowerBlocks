@@ -32,10 +32,11 @@
  */
 typedef uint32_t (*syscall_handler_t)(exception_context_t* context, uint32_t arg1, uint32_t arg2, uint32_t arg3);
 
-#define SYSCALL_ID_YIELD     0
-#define SYSCALL_ID_ASSERT    1
+#define SYSCALL_ID_YIELD         0
+#define SYSCALL_ID_ASSERT        1
+#define SYSCALL_ID_OUT_OF_MEMORY 2
 
-#define SYSCALL_REGISTRY_SIZE 2
+#define SYSCALL_REGISTRY_SIZE 3
 
 extern const syscall_handler_t syscall_registry[SYSCALL_REGISTRY_SIZE];
 
@@ -74,3 +75,10 @@ extern const syscall_handler_t syscall_registry[SYSCALL_REGISTRY_SIZE];
  * Called for when an assert fails to report the information.
  */
 #define SYSCALL_ASSERT(line, file) SYSCALL(SYSCALL_ID_ASSERT, line, file, 0)
+
+/**  @def SYSCALL_OUT_OF_MEMORY
+  *  @brief Called for when an assert fails to report the information.
+ *
+ * Called for when an assert fails to report the information.
+ */
+#define SYSCALL_OUT_OF_MEMORY(line, file) SYSCALL(SYSCALL_ID_OUT_OF_MEMORY, line, file, 0)
