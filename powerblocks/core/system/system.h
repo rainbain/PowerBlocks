@@ -82,6 +82,13 @@
  */
 #define SYSTEM_MEM_PHYSICAL(address) ((uint32_t)(address) & 0x1FFFFFFF)
 
+ /** @def PACKED
+ *  @brief Pack a data structure.
+ *
+ *  Attribute to make it so fields in a data structure are not alignment padded.
+ */
+#define PACKED __attribute__((packed))
+
  /** @def SYSTEM_MEM2_FUNC
  *  @brief Tag a function to be placed in mem2.
  *
