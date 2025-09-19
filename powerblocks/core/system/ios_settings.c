@@ -166,12 +166,16 @@ uint32_t ios_config_get(const char* key, void* buffer, uint32_t size) {
             break;
         case 4: // SHORT
             entry_length = 2;
+            break;
         case 5: // LONG
             entry_length = 4;
+            break;
         case 6: // LONGLONG
             entry_length = 8;
+            break;
         case 7: // BOOL
             entry_length = 1;
+            break;
         default:
             LOG_ERROR(TAB, "Unknown key type: %X\n", found_entry_type);
             return 0;
