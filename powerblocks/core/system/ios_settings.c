@@ -27,6 +27,7 @@ static const char* TAB = "IOS_SETTINGS";
 // This is of a fixed size determined by IOS
 #define IOS_CONFIG_LENGTH 0x4000
 
+// File formats documented on wiibrew.
 static const char* ios_settings_file_path ALIGN(32) = "/title/00000001/00000002/data/setting.txt";
 static const char* ios_config_file_path ALIGN(32) = "/shared2/sys/SYSCONF";
 
@@ -153,11 +154,12 @@ uint32_t ios_config_get(const char* key, void* buffer, uint32_t size) {
     int entry_length;
     switch(found_entry_type) {
         case 1: // BIGARRAY
-            entry_length = *((const uint16_t*)found_entry_value);
+            entry_length = *((const uint16_t*)found_entry_value) + 1;
             found_entry_value += 2;
             break;
         case 2: // SMALLARRAY
-            entry_length = *found_entry_value++;
+            entry_length = (*found_entry_value) + 1;
+            found_entry_value += 1;
             break;
         case 3: // BYTE
             entry_length = 1;
