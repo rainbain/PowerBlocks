@@ -14,6 +14,7 @@
 #include "powerblocks/core/bluetooth/bltootls.h"
 
 #include "wiimote_hid.h"
+#include "wiimote_sys.h"
 
 #include <string.h>
 
@@ -115,6 +116,12 @@ void wiimotes_initialize() {
     };
 
     bltools_register_driver(driver);
+
+    // Load settings
+    wiimote_sys_phrase_settings();
+
+    // Connect wiimotes that have been connected in the past
+    wiimote_connect_registered();
 }
 
 static void wiimote_update(const wiimote_raw_t* raw_data, wiimote_t* output) {

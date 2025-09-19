@@ -164,7 +164,9 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
     uint16_t handle;
     int ret = hci_create_connection(discovery, &handle);
     if(ret < 0) {
-        WIIMOTE_LOG_ERROR("Failed to make HCI connection! %d", ret);
+        // This is treated as a "info".
+        // Its fine for us to attempt reconnection to devices and fail.
+        WIIMOTE_LOG_INFO("Failed to make HCI connection! %d", ret);
         return ret;
     }
 

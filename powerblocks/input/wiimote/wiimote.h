@@ -60,6 +60,8 @@ typedef struct {
 extern wiimote_t WIIMOTES[WIIMOTE_MAX_REMOTES];
 
 // Initializes motes and registers drivers.
+// Bluetooth must be initialized
+// IOS Settings must be initialized
 extern void wiimotes_initialize();
 
 extern void wiimote_poll();

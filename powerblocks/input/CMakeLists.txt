@@ -5,6 +5,7 @@ add_library(
 
     wiimote/wiimote.c
     wiimote/wiimote_hid.c
+    wiimote/wiimote_sys.c
 )
 
 add_library(PowerBlocks::Input ALIAS PowerBlocksInput)
