@@ -172,8 +172,10 @@ int bltools_load_driver(const bluetooth_driver_t* driver, const hci_discovered_d
     instance.driver_id = driver->driver_id;
     instance.instance = driver->initialize_device(device);
 
+    // Do not display as an error, its normal
+    // to try and connect to a device and have that fail
     if(instance.instance == NULL) {
-        BLTOOLS_LOG_ERROR("Failed to initialize driver %d.", driver->driver_id);
+        BLTOOLS_LOG_INFO("Failed to initialize driver %d.", driver->driver_id);
         return BLERROR_DRIVER_INITIALIZE_FAIL;
     }
 

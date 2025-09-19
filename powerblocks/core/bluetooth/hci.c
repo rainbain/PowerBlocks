@@ -592,7 +592,8 @@ int hci_initialize(const char* device) {
     
     // Now we set the event mask
     hci_state.event_mask = (1<<HCI_EVENT_ID_INQUIRY_COMPLETE) | (1<<HCI_EVENT_ID_INQUIRY_RESULT) |
-                           (1<<HCI_EVENT_ID_CONNECTION_COMPLETE);
+                           (1<<HCI_EVENT_ID_CONNECTION_COMPLETE) |
+                           (1<<HCI_EVENT_ID_CONNECTION_REQUEST);
     ret = hci_set_event_mask();
     if(ret < 0) {
         return ret;
@@ -753,7 +754,7 @@ int hci_create_connection(const hci_discovered_device_info_t* device, uint16_t* 
 
     // Handle Error
     if(connection_handle_buffer[0] != 0) {
-        return BLERROR_HCI_REQUEST_ERR;
+        return BLERROR_HCI_CONNECT_FAILED;
     }
 
     *handle = ((uint16_t)connection_handle_buffer[1] << 0) | ((uint16_t)connection_handle_buffer[2] << 8);
