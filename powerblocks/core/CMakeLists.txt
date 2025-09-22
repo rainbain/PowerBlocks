@@ -13,6 +13,7 @@ add_library(
     system/ipc.c
     system/ios.c
     system/ios_settings.c
+    system/gpio.c
 
     graphics/video.c
     graphics/framebuffer.c

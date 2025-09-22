@@ -20,6 +20,7 @@
 #include "utils/log.h"
 
 #include "exceptions.h"
+#include "gpio.h"
 
 // Main of the application of the user.
 extern void main();

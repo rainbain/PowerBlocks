@@ -18,8 +18,13 @@
 
 #include "wiimote_hid.h"
 
+#include "powerblocks/core/bluetooth/blerror.h"
+
 #include "wiimote.h"
+#include "wiimote_sys.h"
 #include "wiimote_log.h"
+
+#include "FreeRTOS.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -27,21 +32,11 @@
 #define WIIMOTE_HID_INPUT_REPORT  0xA1
 #define WIIMOTE_HID_OUTPUT_REPORT 0xA2
 
-#define WIIMOTE_REPORT_LEDS                    0x11 // Set the leds on the controller
-#define WIIMOTE_REPORT_REPORT_MODE             0x12 // Used to make/configure reports
-#define WIIMOTE_REPORT_STATUS                  0x15 // Request status information
-#define WIIMOTE_REPORT_STATUS_INFO             0x20 // Reply to status request, also when it changes states
-#define WIIMOTE_REPORT_BUTTONS                 0x30 // Core buttons data
-#define WIIMOTE_REPORT_BUTTONS_ACCL            0x31 // Core Buttons + Accelerometer
-#define WIIMOTE_REPORT_BUTTONS_EXT8            0x32 // Core Buttons + 8 Extension Bytes
-#define WIIMOTE_REPORT_BUTTONS_ACCL_IR12       0X33 // Core Buttons + Accelerometer + 8 Extension Bytes
-#define WIIMOTE_REPORT_BUTTONS_EXT19           0X34 // Core Buttons + 19 Extension Bytes
-#define WIIMOTE_REPORT_BUTTONS_ACCL_EXT16      0x35 // Core Buttons + Accelerometer + 16 Extension Bytes
-#define WIIMOTE_REPORT_BUTTONS_IR10_EXT9       0x36 // Core Buttons + 10 IR Bytes + 9 Extension Bytes
-#define WIIMOTE_REPORT_BUTTONS_ACCEL_IR10_EXT6 0x37 // Core Buttons + Accelerometer + 10 IR Bytes + 6 Extension Bytes
-#define WIIMOTE_REPORT_EXT21                   0x3D // 21 Extension Bytes
-#define WIIMOTE_REPORT_INTERLEAVED_A           0x3E // Interleaved Buttons and Accelerometer with 36 IR
-#define WIIMOTE_REPORT_INTERLEAVED_B           0x3F // Other end of Interleaved Data
+// Memory space 0x04, Registers
+#define WIIMOTE_MEMORY_REGISTER_IR        0x04B00030
+#define WIIMOTE_MEMORY_REGISTER_IR_BLOCK1 0x04B00000
+#define WIIMOTE_MEMORY_REGISTER_IR_BLOCK2 0x04B0001A
+#define WIIMOTE_MEMORY_REGISTER_IR_MODE   0x04B00033
 
 static void wiimote_handle_status_report(wiimote_hid_t* wiimote, const uint8_t* report, size_t length) {
     // Format:
@@ -65,7 +60,8 @@ static void wiimote_handle_status_report(wiimote_hid_t* wiimote, const uint8_t* 
     xSemaphoreGive(wiimote->internal_state_lock);
 
     // Reenable reporting.
-    wiimote_hid_set_report(wiimote, wiimote->set_report_mode);
+    wiimote->set_report_mode = 0; // We want it to update this, since its been disabled
+    wiimote_hid_set_report(wiimote, wiimote->set_report_mode, false);
 }
 
 static void wiimote_handle_data_report(wiimote_hid_t* wiimote, uint8_t report_type, const uint8_t* report, size_t length) {
@@ -123,6 +119,9 @@ static void wiimote_on_report_in(void* channel_v, void* wiimote_v) {
         case WIIMOTE_REPORT_STATUS_INFO:
             wiimote_handle_status_report(wiimote, report, report_length);
             break;
+        case WIIMOTE_REPORT_ACKNOWLEDGE_OUTPUT:
+            WIIMOTE_LOG_DEBUG("Acknowledge output report.");
+            break;
         case WIIMOTE_REPORT_BUTTONS:
         case WIIMOTE_REPORT_BUTTONS_ACCL:
         case WIIMOTE_REPORT_BUTTONS_EXT8:
@@ -147,11 +146,85 @@ static void wiimote_on_report_in(void* channel_v, void* wiimote_v) {
 static int wiimote_hid_set_leds(wiimote_hid_t* wiimote, uint8_t leds) {
     uint8_t payload[3] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_LEDS, leds};
 
-    int ret;
-    ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
-    if(ret < 0)
-        return ret;
+    return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+}
+
+// Writes to the internal memory of the wiimote
+// Writes up to 16 bytes
+static int wiimote_write_memory(wiimote_hid_t* wiimote, uint32_t address, const uint8_t* data, size_t size) {
+    if(size == 0 || size > 16) {
+        return BLERROR_ARGUMENT;
+    }
+
+    uint8_t payload[] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_WRITE_MEMORY,
+        (address >> 24) & 0xFF, (address >> 16) & 0xFF, (address >> 8) & 0xFF, (address >> 0) & 0xFF,
+        size & 0xFF,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     
+    memcpy(payload + 7, data, size);
+
+    return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+}
+
+static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
+    // Physical Camera Enable
+    int ret;
+    {
+        // Clock on
+        uint8_t payload[2] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_ENABLE_CAMERA_CLOCK};
+        ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+        if(ret < 0)
+            return ret;
+        
+        // Enable line
+        payload[1] = WIIMOTE_REPORT_ENABLE_CAMERA;
+        ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+        if(ret < 0)
+            return ret;
+    }
+
+    // Camera Control And Sensitivity
+    {
+        // Enable the meow controller
+        uint8_t payload = 0x08;
+        ret = wiimote_write_memory(wiimote, WIIMOTE_MEMORY_REGISTER_IR, &payload, sizeof(payload));
+        if(ret < 0)
+            return ret;
+        
+        // Short delay or else the mode is random
+        vTaskDelay(50 / portTICK_PERIOD_MS);
+
+        // Pull sensitivity setting from system settings
+        uint8_t selected_mode = wiimote_sys_config.ir_sensitivity;
+        if(selected_mode > 4) {
+            WIIMOTE_LOG_ERROR("Invalid sensitivity mode: %d", selected_mode);
+            selected_mode = 0x2; // Good default
+        }
+
+        // Register configurations for different sensitivity modes.
+        const static uint8_t sensitivity_modes[][11] = {
+            {0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0x64, 0x00, 0xfe, 0xfd, 0x05},
+            {0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0x96, 0x00, 0xb4, 0xb3, 0x04},
+            {0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0xaa, 0x00, 0x64, 0x63, 0x03},
+            {0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0xc8, 0x00, 0x36, 0x35, 0x03},
+            {0x07, 0x00, 0x00, 0x71, 0x01, 0x00, 0x72, 0x00, 0x20, 0x1f, 0x03}
+        };
+
+        const uint8_t* mode_data = sensitivity_modes[selected_mode];
+        ret = wiimote_write_memory(wiimote, WIIMOTE_MEMORY_REGISTER_IR_BLOCK1, mode_data, 9);
+        if(ret < 0)
+            return ret;
+        ret = wiimote_write_memory(wiimote, WIIMOTE_MEMORY_REGISTER_IR_BLOCK2, mode_data + 9, 2);
+        if(ret < 0)
+            return ret;
+        
+        // Short delay or else the mode is random
+        vTaskDelay(50 / portTICK_PERIOD_MS);
+
+        // Now set mode for IR Mode register (threw the set report function)
+        wiimote_hid_set_report(wiimote, wiimote->set_report_mode, true);
+    }
+
     return 0;
 }
 
@@ -159,7 +232,7 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
     // Setup
     wiimote->slot = slot;
     wiimote->internal_state_lock = xSemaphoreCreateMutexStatic(&wiimote->semaphore_data[0]);
-    
+
     // Ask HCI for a handle to this device
     uint16_t handle;
     int ret = hci_create_connection(discovery, &handle);
@@ -200,8 +273,20 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
     // Set up events
     l2cap_set_channel_receive_event(&wiimote->interrupt_channel, wiimote_on_report_in, wiimote);
 
-    wiimote_hid_set_leds(wiimote, 0x10 << (slot & 0b11));
-    wiimote_hid_set_report(wiimote, 0x30);
+    // LEDs
+    ret = wiimote_hid_set_leds(wiimote, 0x10 << (slot & 0b11));
+    if(ret < 0)
+        return ret;
+
+    // Default reporting mode
+    wiimote_hid_set_report(wiimote, 0x30, false);
+    if(ret < 0)
+        return ret;
+
+    // Get the camera going
+    wiimote_initialize_ir_camera(wiimote);
+    if(ret < 0)
+        return ret;
 
     return 0;
 }
@@ -210,19 +295,44 @@ void wiimote_hid_close(wiimote_hid_t* wiimote) {
 
 }
 
-int wiimote_hid_set_report(wiimote_hid_t* wiimote, uint8_t report_type) {
-    // Interestingly, I believe your supposed to use the set report HID code
-    // But newer wiimotes make you just use the data in code.
-    uint8_t payload[4] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_REPORT_MODE, 0x00, report_type};
-
-    wiimote->set_report_mode = report_type;
-
+int wiimote_hid_set_report(wiimote_hid_t* wiimote, uint8_t report_type, bool update_ir_mode) {
+    // Only update it if we need to
     int ret;
-    ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
-    if(ret < 0)
-        return ret;
+    if(wiimote->set_report_mode != report_type) {
+        // Interestingly, I believe your supposed to use the set report HID code
+        // But newer wiimotes make you just use the data in code.
+        uint8_t payload[4] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_REPORT_MODE, 0x00, report_type};
 
-    return 0;
+        wiimote->set_report_mode = report_type;
+        ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+        if(ret < 0)
+            return ret;
+    }
+    
+    if(!update_ir_mode)
+        return 0;
+    
+    // Update IR mode register
+    uint8_t mode;
+    switch(report_type) {
+        default:
+            mode = 0x01; // Basic
+        
+        case WIIMOTE_REPORT_BUTTONS_ACCL_IR12:
+            mode = 0x03; // Extended
+        
+        case WIIMOTE_REPORT_INTERLEAVED_A:
+        case WIIMOTE_REPORT_INTERLEAVED_B:
+            mode = 0x05; // Full
+    }
+
+    ret = 0;
+    if(wiimote->set_ir_mode != mode) {
+        ret = wiimote_write_memory(wiimote, WIIMOTE_MEMORY_REGISTER_IR_MODE, &mode, sizeof(mode));
+        if(ret >= 0)
+            wiimote->set_ir_mode = mode;
+    }
+    return ret;
 }
 
 

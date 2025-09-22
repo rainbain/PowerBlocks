@@ -267,6 +267,8 @@ extern uint64_t system_get_time_base_int();
  * 
  * No interrupts version.
  * 
+ * Recommend using FreeRTOS vTaskDelay instead.
+ * 
  * @param ticks Number of ticks to wait for
  */
 extern void system_delay_int(uint64_t ticks);

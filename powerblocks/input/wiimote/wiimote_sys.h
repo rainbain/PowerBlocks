@@ -25,7 +25,7 @@
 typedef struct {
     uint8_t sensor_bar_position; // Sensor bar on bottom = 0, or top = 1, of wii.
     uint8_t motor_enabled; // Is the Motors globally enabled?
-    uint32_t ir_sensitivity; // IR Sensor sensitivity setting
+    uint32_t ir_sensitivity; // IR Sensor sensitivity setting. 0-4
     uint8_t speaker_volume; // Volume of the speaker in the wiimote
 
     // Stores wiimotes connected to the wii while running via the "1" "2" button combo.

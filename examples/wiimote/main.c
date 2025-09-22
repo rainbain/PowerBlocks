@@ -1,4 +1,5 @@
 #include "powerblocks/core/system/system.h"
+#include "powerblocks/core/system/gpio.h"
 #include "powerblocks/core/system/ios.h"
 #include "powerblocks/core/system/ios_settings.h"
 
@@ -55,16 +56,26 @@ int main() {
         printf("Failed To Init Bluetooth.\n");
     }
 
+    gpio_set_direction(GPIO_SENSOR_BAR, true);
     wiimotes_initialize();
 
-    ret = bltools_begin_automatic_discovery(portMAX_DELAY);
+    //ret = bltools_begin_automatic_discovery(portMAX_DELAY);
+    //if(ret < 0) {
+    //    printf("Auto discovery failed.\n");
+    //}
+
+    while(!WIIMOTES[0].driver) {
+
+    }
+
+    printf("Done!\n");
+
+    ret = wiimote_set_reporting(&WIIMOTES[0], WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_IR);
     if(ret < 0) {
-        printf("Auto discovery failed.\n");
+        printf("Failed to find a reporting mode!\n");
     }
 
 
-
-    printf("Done!\n");
 
     // Create the clock
     int meows = 0;
@@ -87,6 +98,12 @@ int main() {
             if(WIIMOTES[0].buttons.down & WIIMOTE_BUTTONS_TWO) {
                 printf("TWO %d\n", meows);
                 meows++;
+            }
+        }
+
+        for(int i = 0; i < 4; i++) {
+            if(true) {
+                printf("(%d): %d, %d\n", i, WIIMOTES[0].ir_tracking[i].position.x, WIIMOTES[0].ir_tracking[i].position.y);
             }
         }
 
