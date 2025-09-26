@@ -19,3 +19,6 @@ Feel free to add them as they are discovered.
 2. Add TEV color swapping.
 3. Add Indirect Texturing
 4. Add Texture LODs
+
+## Bugs
+1. Fix rand() function.
