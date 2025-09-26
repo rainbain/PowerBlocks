@@ -8,6 +8,7 @@ picolibc/lib
 examples/HelloWorld/build
 examples/Teapot/build
 examples/wiimote/build
+examples/Rust/build
 .vscode/settings.json
 .vscode/settings.json
 /.vscode
