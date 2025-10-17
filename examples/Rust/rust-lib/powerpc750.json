@@ -1,0 +1,11 @@
+{
+    "arch": "powerpc",
+    "cpu": "750",
+    "executables": true,
+    "llvm-target": "ppc32-unknown-elf",
+    "data-layout": "E-m:e-p:32:32-Fn32-i64:64-n32",
+    "os": "none",
+    "relocation-model": "static",
+    "target-endian": "big",
+    "target-pointer-width": 32
+}

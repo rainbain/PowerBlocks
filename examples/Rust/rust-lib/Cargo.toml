@@ -1,0 +1,16 @@
+[package]
+name = "rust-lib"
+version = "0.1.0"
+
+[lib]
+path = "lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+
+[profile.release]
+panic = "abort"
+lto = true
+
+[profile.dev]
+panic = "abort"
