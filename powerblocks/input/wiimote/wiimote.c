@@ -106,10 +106,10 @@ static void wiimote_update_accelerometer(const wiimote_raw_t* raw_data, wiimote_
     }
 
     // Make normalized floats
-    const int zero = 0x200;
-    output->accelerometer.x = (float)(x - zero) / 512.0f;
-    output->accelerometer.y = (float)(y - zero) / 512.0f;
-    output->accelerometer.z = (float)(z - zero) / 512.0f;
+    /// TODO: I believe float-int conversion are quite bad on PowerPC 750. Check that, and if so, maybe convert it 1 time.
+    output->accelerometer.accel.x = (float)(x - (int)raw_data->calibration.accel_zero[0]) / (float)raw_data->calibration.accel_one[0];
+    output->accelerometer.accel.y = (float)(y - (int)raw_data->calibration.accel_zero[1]) / (float)raw_data->calibration.accel_one[1];
+    output->accelerometer.accel.z = (float)(z - (int)raw_data->calibration.accel_zero[2]) / (float)raw_data->calibration.accel_one[2];
 }
 
 static void wiimote_update_ir(const wiimote_raw_t* raw_data, wiimote_t* output) {
@@ -184,6 +184,26 @@ static void wiimote_update_ir(const wiimote_raw_t* raw_data, wiimote_t* output) 
     }
 }
 
+static void wiimote_update_cursor(wiimote_t* output) {
+    // First off, ideally there is two points. But we should be able to work with more or less. We will need to know how many
+    int visible_points = 0;
+    for(int i = 0; i < 4; i++) {
+        if(output->ir_tracking[i].visible)
+            visible_points++;
+    }
+
+    switch(visible_points) {
+        case 2:
+        case 3:
+        case 4:
+            break;
+    }
+
+}
+
+static void wiimote_update_orientation(wiimote_t* output) {
+}
+
 void wiimotes_initialize() {
     memset(WIIMOTES, 0, sizeof(WIIMOTES));
 
@@ -219,10 +239,12 @@ static void wiimote_update(const wiimote_raw_t* raw_data, wiimote_t* output) {
 
     if(output->present & WIIMOTE_PRESENT_ACCELEROMETER) {
         wiimote_update_accelerometer(raw_data, output);
+        wiimote_update_orientation(output);
     }
 
     if(output->present & WIIMOTE_PRESENT_IR) {
         wiimote_update_ir(raw_data, output);
+        wiimote_update_cursor(output);
     }
 }
 

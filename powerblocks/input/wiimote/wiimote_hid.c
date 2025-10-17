@@ -38,6 +38,9 @@
 #define WIIMOTE_MEMORY_REGISTER_IR_BLOCK2 0x04B0001A
 #define WIIMOTE_MEMORY_REGISTER_IR_MODE   0x04B00033
 
+// Memory space 0x00, EEPROM
+#define WIIMOTE_MEMORY_EEPROM_CALIBRATION 0x00000016
+
 static void wiimote_handle_status_report(wiimote_hid_t* wiimote, const uint8_t* report, size_t length) {
     // Format:
     // BB BB LF 00 00 VV
@@ -88,6 +91,67 @@ static void wiimote_handle_data_report(wiimote_hid_t* wiimote, uint8_t report_ty
     xSemaphoreGive(wiimote->internal_state_lock);
 }
 
+static void wiimote_handle_calibration_data(wiimote_hid_t* wiimote, const uint8_t* data, size_t length) {
+    if(length != 8) {
+        WIIMOTE_LOG_ERROR("Calibration data incorrect size. %d, expected %d.", length, 8);
+        return;
+    }
+
+    uint16_t t = data[3];
+    wiimote->internal_state.calibration.accel_zero[0] = ((uint16_t)data[0] << 2) | ((t >> 4) & 0b11);
+    wiimote->internal_state.calibration.accel_zero[1] = ((uint16_t)data[1] << 2) | ((t >> 2) & 0b11);
+    wiimote->internal_state.calibration.accel_zero[2] = ((uint16_t)data[2] << 2) | ((t >> 0) & 0b11);
+
+    t = data[7];
+    wiimote->internal_state.calibration.accel_one[0] = ((uint16_t)data[4] << 2) | ((t >> 4) & 0b11);
+    wiimote->internal_state.calibration.accel_one[1] = ((uint16_t)data[5] << 2) | ((t >> 2) & 0b11);
+    wiimote->internal_state.calibration.accel_one[2] = ((uint16_t)data[6] << 2) | ((t >> 0) & 0b11);
+
+    // Zero out measurement for 1.
+    wiimote->internal_state.calibration.accel_one[0] -= wiimote->internal_state.calibration.accel_zero[0];
+    wiimote->internal_state.calibration.accel_one[1] -= wiimote->internal_state.calibration.accel_zero[1];
+    wiimote->internal_state.calibration.accel_one[2] -= wiimote->internal_state.calibration.accel_zero[2];
+
+    // Print it out for debugging
+    WIIMOTE_LOG_DEBUG("Calibration Data:");
+    WIIMOTE_LOG_DEBUG("  Zero G: (%d, %d, %d)", wiimote->internal_state.calibration.accel_zero[0], wiimote->internal_state.calibration.accel_zero[1], wiimote->internal_state.calibration.accel_zero[2]);
+    WIIMOTE_LOG_DEBUG("  One G:  (%d, %d, %d)", wiimote->internal_state.calibration.accel_one[0], wiimote->internal_state.calibration.accel_one[1], wiimote->internal_state.calibration.accel_one[2]);
+}
+
+static void wiimote_handle_read_memory(wiimote_hid_t* wiimote, const uint8_t* report, size_t length) {
+    // Format:
+    // BB BB SE AA AA DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD
+    // BB BB - Buttons
+    // SE - Size of packet | Error
+    // AA AA - Lower nibble of address
+    // DD ... - Data
+
+    uint8_t size = (report[2] >> 4) + 1;
+    uint16_t address = ((uint16_t)report[3] << 8) | (uint16_t)report[4];
+
+
+    // Error Flag
+    if(report[2] & 0xF) {
+        WIIMOTE_LOG_ERROR("Read memory failed on address %04X, error %d", address, report[2] & 0xF);
+        return;
+    }
+
+    // Make sure size is not to small. Seems you cant match it exactly, it sends in multiples of 16
+    if(size > length - 5) {
+        WIIMOTE_LOG_ERROR("Read memory size too big on readback of address %04X. Expected %d got %d", address, length - 5, size);
+        return;
+    }
+
+    const uint8_t* data = report + 5;
+    switch(address) {
+        case (WIIMOTE_MEMORY_EEPROM_CALIBRATION & 0xFFFF):
+            wiimote_handle_calibration_data(wiimote, data, size);
+            break;
+        default:
+            WIIMOTE_LOG_ERROR("Got read memory report for unknown address %04X", address);
+    }
+}
+
 
 // Called whenever data comes in for a wiimote
 static void wiimote_on_report_in(void* channel_v, void* wiimote_v) {
@@ -119,6 +183,9 @@ static void wiimote_on_report_in(void* channel_v, void* wiimote_v) {
         case WIIMOTE_REPORT_STATUS_INFO:
             wiimote_handle_status_report(wiimote, report, report_length);
             break;
+        case WIIMOTE_REPORT_READ_MEMORY_DATA:
+            wiimote_handle_read_memory(wiimote, report, report_length);
+            break;
         case WIIMOTE_REPORT_ACKNOWLEDGE_OUTPUT:
             WIIMOTE_LOG_DEBUG("Acknowledge output report.");
             break;
@@ -149,6 +216,17 @@ static int wiimote_hid_set_leds(wiimote_hid_t* wiimote, uint8_t leds) {
     return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
 }
 
+// Request to read back calibration data through a memory read request.
+static int wiimote_hid_request_calibration_data(wiimote_hid_t* wiimote) {
+    uint32_t address = WIIMOTE_MEMORY_EEPROM_CALIBRATION;
+    uint16_t size = 8;
+    uint8_t payload[] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_READ_MEMORY,
+        (address >> 24) & 0xFF, (address >> 16) & 0xFF, (address >> 8) & 0xFF, (address >> 0) & 0xFF,
+        size >> 8, size & 0xFF}; // Request 8 bytes
+    
+    return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+}
+
 // Writes to the internal memory of the wiimote
 // Writes up to 16 bytes
 static int wiimote_write_memory(wiimote_hid_t* wiimote, uint32_t address, const uint8_t* data, size_t size) {
@@ -171,7 +249,7 @@ static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
     int ret;
     {
         // Clock on
-        uint8_t payload[2] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_ENABLE_CAMERA_CLOCK};
+        uint8_t payload[3] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_ENABLE_CAMERA_CLOCK, 0x04};
         ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
         if(ret < 0)
             return ret;
@@ -223,12 +301,28 @@ static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
 
         // Now set mode for IR Mode register (threw the set report function)
         wiimote_hid_set_report(wiimote, wiimote->set_report_mode, true);
+
+        // You have to do this again for some reason?
+        ret = wiimote_write_memory(wiimote, WIIMOTE_MEMORY_REGISTER_IR, &payload, sizeof(payload));
+        if(ret < 0)
+            return ret;
     }
 
     return 0;
 }
 
 int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_info_t* discovery, int slot) {
+    // Clear out data
+    memset(wiimote, 0, sizeof(*wiimote));
+
+    // Default data
+    wiimote->internal_state.calibration.accel_zero[0] = 512;
+    wiimote->internal_state.calibration.accel_zero[1] = 512;
+    wiimote->internal_state.calibration.accel_zero[2] = 512;
+    wiimote->internal_state.calibration.accel_one[0] = 104;
+    wiimote->internal_state.calibration.accel_one[1] = 104;
+    wiimote->internal_state.calibration.accel_one[2] = 104;
+
     // Setup
     wiimote->slot = slot;
     wiimote->internal_state_lock = xSemaphoreCreateMutexStatic(&wiimote->semaphore_data[0]);
@@ -275,6 +369,11 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
 
     // LEDs
     ret = wiimote_hid_set_leds(wiimote, 0x10 << (slot & 0b11));
+    if(ret < 0)
+        return ret;
+    
+    // Request calibration data
+    ret = wiimote_hid_request_calibration_data(wiimote);
     if(ret < 0)
         return ret;
 

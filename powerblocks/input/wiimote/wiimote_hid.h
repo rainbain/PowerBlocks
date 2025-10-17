@@ -23,8 +23,10 @@
 #define WIIMOTE_REPORT_ENABLE_CAMERA_CLOCK     0x13 // Enables 24 MHz clock to the internal camera
 #define WIIMOTE_REPORT_STATUS                  0x15 // Request status information
 #define WIIMOTE_REPORT_WRITE_MEMORY            0x16 // Writes to the internal memory of the wiimote
+#define WIIMOTE_REPORT_READ_MEMORY             0x17 // Request to read memory data
 #define WIIMOTE_REPORT_ENABLE_CAMERA           0x1A // Activates the camera enable line
 #define WIIMOTE_REPORT_STATUS_INFO             0x20 // Reply to status request, also when it changes states
+#define WIIMOTE_REPORT_READ_MEMORY_DATA        0x21 // Reply to the read memory report.
 #define WIIMOTE_REPORT_ACKNOWLEDGE_OUTPUT      0x22 // Required acknowledgement to write memory report
 #define WIIMOTE_REPORT_BUTTONS                 0x30 // Core buttons data
 #define WIIMOTE_REPORT_BUTTONS_ACCL            0x31 // Core Buttons + Accelerometer
@@ -57,6 +59,11 @@ typedef struct {
         wiimote_flags_t flags; // Contains LED and state information
         uint8_t battery_level;
     } core_state;
+
+    struct {
+        uint16_t accel_zero[3];
+        uint16_t accel_one[3];
+    } calibration;
 
     uint8_t report_type;
     uint8_t data_report[42]; // Max report size is 21, but interleaved allows for 2 to make 1

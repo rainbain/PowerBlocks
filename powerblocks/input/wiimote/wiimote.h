@@ -57,8 +57,11 @@ typedef struct {
         uint16_t up; // True for 1 poll when up
     } buttons;
 
-    // Raw Accelerometer Data. Updated if accelerometer is enabled.
-    vec3 accelerometer;
+    // Accelerometer Data + rotation. Updated if accelerometer is enabled.
+    struct {
+        vec3 accel;
+        vec3 orientation;
+    } accelerometer;
 
     // Raw IR Data
     // Up to 4 IR points tracked. If more than 4 it will switch between them.
