@@ -22,3 +22,4 @@ Feel free to add them as they are discovered.
 
 ## Bugs
 1. Fix rand() function.
+2. Fix framebuffer fill function. When drawing 5x5 red rects for example it fails up update UV values correctly and makes colors.
