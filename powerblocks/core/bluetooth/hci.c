@@ -16,7 +16,7 @@
 #include "hci.h"
 
 #include "powerblocks/core/system/system.h"
-#include "powerblocks/core/system/ios.h"
+#include "powerblocks/core/ios/ios.h"
 
 #include "powerblocks/core/utils/log.h"
 

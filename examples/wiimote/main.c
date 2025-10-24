@@ -1,7 +1,7 @@
 #include "powerblocks/core/system/system.h"
 #include "powerblocks/core/system/gpio.h"
-#include "powerblocks/core/system/ios.h"
-#include "powerblocks/core/system/ios_settings.h"
+#include "powerblocks/core/ios/ios.h"
+#include "powerblocks/core/ios/ios_settings.h"
 
 #include "powerblocks/core/graphics/video.h"
 
@@ -82,30 +82,17 @@ int main() {
     while(true) {
         wiimote_poll();
 
+        vec2i cursor = WIIMOTES[0].cursor.pos;
+
         if(WIIMOTES[0].driver) {
             if(WIIMOTES[0].buttons.down & WIIMOTE_BUTTONS_A) {
-                printf("A %d\n", meows);
-                meows++;
-            }
-            if(WIIMOTES[0].buttons.down & WIIMOTE_BUTTONS_B) {
-                printf("B %d\n", meows);
-                meows++;
-            }
-            if(WIIMOTES[0].buttons.down & WIIMOTE_BUTTONS_ONE) {
-                printf("ONE %d\n", meows);
-                meows++;
-            }
-            if(WIIMOTES[0].buttons.down & WIIMOTE_BUTTONS_TWO) {
-                printf("TWO %d\n", meows);
+                printf("A %d, CX: %d, CY: %d\n", meows, cursor.x, cursor.y);
                 meows++;
             }
         }
 
-        for(int i = 0; i < 4; i++) {
-            if(true) {
-                printf("(%d): %d, %d\n", i, WIIMOTES[0].ir_tracking[i].position.x, WIIMOTES[0].ir_tracking[i].position.y);
-            }
-        }
+        vec2i size = vec2i_new(5, 5);
+        framebuffer_fill_rgba(&frame_buffer, 0xFF0000FF, vec2i_sub(cursor, size), vec2i_add(cursor, size));
 
         // Wait for vsync
         video_wait_vsync();

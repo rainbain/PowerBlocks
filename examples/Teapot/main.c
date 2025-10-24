@@ -11,7 +11,7 @@
 #include <math.h>
 
 #include "powerblocks/core/system/system.h"
-#include "powerblocks/core/system/ios.h"
+#include "powerblocks/core/ios/ios.h"
 
 #include "powerblocks/core/graphics/video.h"
 #include "powerblocks/core/graphics/gx.h"

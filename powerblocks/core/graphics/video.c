@@ -14,7 +14,7 @@
 
 #include "system/system.h"
 #include "system/exceptions.h"
-#include "system/ios_settings.h"
+#include "ios/ios_settings.h"
 
 #include "FreeRTOS.h"
 #include "semphr.h"

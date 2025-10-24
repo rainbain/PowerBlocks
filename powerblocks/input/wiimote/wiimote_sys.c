@@ -15,7 +15,7 @@
 
 #include "wiimote_sys.h"
 
-#include "powerblocks/core/system/ios_settings.h"
+#include "powerblocks/core/ios/ios_settings.h"
 
 #include "powerblocks/core/bluetooth/bltootls.h"
 

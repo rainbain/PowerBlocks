@@ -11,9 +11,10 @@ add_library(
     system/exceptions.c
     system/syscall.c
     system/ipc.c
-    system/ios.c
-    system/ios_settings.c
     system/gpio.c
+
+    ios/ios.c
+    ios/ios_settings.c
 
     graphics/video.c
     graphics/framebuffer.c
