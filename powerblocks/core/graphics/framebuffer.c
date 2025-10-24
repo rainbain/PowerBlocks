@@ -170,16 +170,16 @@ void framebuffer_fill_rgba(framebuffer_t* framebuffer, uint32_t rgba, vec2i a, v
         a.x = VIDEO_WIDTH;
     if(a.y < 0)
         a.y = 0;
-    if(a.y > VIDEO_WIDTH)
-        a.y = VIDEO_WIDTH;
+    if(a.y > VIDEO_HEIGHT)
+        a.y = VIDEO_HEIGHT;
     if(b.x < 0)
         b.x = 0;
     if(b.x > VIDEO_WIDTH)
         b.x = VIDEO_WIDTH;
     if(b.y < 0)
         b.y = 0;
-    if(b.y > VIDEO_WIDTH)
-        b.y = VIDEO_WIDTH;
+    if(b.y > VIDEO_HEIGHT)
+        b.y = VIDEO_HEIGHT;
     
     // Calculate region dimensions. Here we assume b is exclusive.
     int width  = b.x - a.x;
