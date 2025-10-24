@@ -203,7 +203,7 @@
  */
 #define ASSERT(x) \
     if((x) == 0) { \
-        SYSCALL_ASSERT(__LINE__, __FILE__); \
+        SYSCALL_ASSERT("ASSERTION FAILED", __LINE__, __FILE__); \
     }
 
  /** @def ASSERT_OUT_OF_MEMORY
@@ -217,7 +217,7 @@
  */
 #define ASSERT_OUT_OF_MEMORY(x) \
     if((x) == 0) { \
-        SYSCALL_OUT_OF_MEMORY(__LINE__, __FILE__); \
+        SYSCALL_ASSERT("OUT OF MEMORY", __LINE__, __FILE__); \
     }
 
  /** @def ALIGN

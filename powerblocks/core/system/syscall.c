@@ -26,20 +26,12 @@ static uint32_t syscall_yield(exception_context_t* context, uint32_t arg1, uint3
     return 0;
 }
 
-static uint32_t syscall_assert(exception_context_t* context, uint32_t line, uint32_t file_p, uint32_t arg3) {
+static uint32_t syscall_out_of_memory(exception_context_t* context, uint32_t error_name_p, uint32_t line, uint32_t file_p) {
     const char* file = (const char*)file_p;
+    const char* error_name = (const char*)error_name_p;
 
     char msg[64];
-    snprintf(msg, sizeof(msg), "ASSERT FAILED: %s:%d", file, line);
-    crash_handler_bug_check(msg, context);
-    return 0;
-}
-
-static uint32_t syscall_out_of_memory(exception_context_t* context, uint32_t line, uint32_t file_p, uint32_t arg3) {
-    const char* file = (const char*)file_p;
-
-    char msg[64];
-    snprintf(msg, sizeof(msg), "OUT OF MEMORY: %s:%d", file, line);
+    snprintf(msg, sizeof(msg), "%s: %s:%d", error_name, file, line);
     crash_handler_bug_check(msg, context);
     return 0;
 }
@@ -47,6 +39,5 @@ static uint32_t syscall_out_of_memory(exception_context_t* context, uint32_t lin
 
 const syscall_handler_t syscall_registry[SYSCALL_REGISTRY_SIZE] = {
     syscall_yield,
-    syscall_assert,
     syscall_out_of_memory
 };
