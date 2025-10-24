@@ -25,7 +25,6 @@ typedef struct {
 #define vec3_dot(a, b) ((a).x * (b).x + (a).y * (b).y + (a.z) * (b).z)
 #define vec3_magnitude_sq(a) vec3_dot(a, a)
 #define vec3_magnitude(a) (sqrtf(vec3_magnitude_sq(a)))
-
 #define vec3_muls(a, s) ((vec3){(a).x*(s), (a).y*(s), (a).z*(s)})
 #define vec3_divs(a, s) ((vec3){(a).x/(s), (a).y/(s), (a).z/(s)})
 
