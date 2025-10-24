@@ -59,15 +59,17 @@ typedef struct {
 
     // Accelerometer Data + rotation. Updated if accelerometer is enabled.
     struct {
-        vec3 accel;
-        vec3 orientation;
+        vec3 rectangular; // X, Y, Z values of acceleration
+        vec3 spherical;   // p, theta, phi of acceleration. Similar to magnitude,
+        vec3 orientation; // Like spherical, but only updated when the force is ~1 G, i.e. last usable oriantation before accelerating.
     } accelerometer;
 
-    // Raw IR Data
+    // IR Data
     // Up to 4 IR points tracked. If more than 4 it will switch between them.
     struct {
         // Included in all IR modes, 10 bit unsigned
         bool visible;
+        bool side; // Side of the sensor bar it is on. 0=left, 1=right
         vec2i position;
 
         // Included in extended and full mode. Size 0-15
@@ -81,7 +83,14 @@ typedef struct {
 
     // Cursor position, calculated from IR tracking if enabled.
     // Pixel position on screen. Can extend off screen.
-    vec2i cursor;
+    struct {
+        vec2i pos;
+        float distance; // distance from dot to dot
+        float z; // Similar to the wiiuse one. Just 1023 - distance
+        float yaw;
+
+        int known_dots; // Dots seen up until loosing tracking.
+    } cursor;
 } wiimote_t;
 
 extern wiimote_t WIIMOTES[WIIMOTE_MAX_REMOTES];
