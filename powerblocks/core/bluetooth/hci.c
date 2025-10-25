@@ -525,16 +525,13 @@ int hci_initialize(const char* device) {
     // Known state in case we dont initialize anything
     memset(&hci_state, 0, sizeof(hci_state));
 
-    hci_state.file = -1;
     hci_state.file =  ios_open(device, IOS_MODE_READ | IOS_MODE_WRITE);
 
     // If there was an issue opening it, report that.
-    #ifdef HCI_ERROR_LOGGING
     if(hci_state.file < 0) {
         HCI_LOG_ERROR(TAG, "Error opening \"%s\": %d", device, hci_state.file);
         return hci_state.file;
     }
-    #endif
 
     // Create semaphores.
     hci_state.lock = xSemaphoreCreateMutexStatic(&hci_state.semaphore_data[0]);
