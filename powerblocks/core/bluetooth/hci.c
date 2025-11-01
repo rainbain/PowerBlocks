@@ -519,6 +519,12 @@ static int hci_cancel_inquiry() {
     return 0;
 }
 
+static int hci_reset_no_lock() {
+    int ret;
+    ret = hci_send_command(HCI_OPCODE_RESET, NULL, 0, NULL, 0, NULL);
+    return ret;
+}
+
 /* -------------------HCI Initialization--------------------- */
 
 int hci_initialize(const char* device) {
@@ -590,7 +596,8 @@ int hci_initialize(const char* device) {
     // Now we set the event mask
     hci_state.event_mask = (1<<HCI_EVENT_ID_INQUIRY_COMPLETE) | (1<<HCI_EVENT_ID_INQUIRY_RESULT) |
                            (1<<HCI_EVENT_ID_CONNECTION_COMPLETE) |
-                           (1<<HCI_EVENT_ID_CONNECTION_REQUEST);
+                           (1<<HCI_EVENT_ID_CONNECTION_REQUEST) |
+                           (1<<HCI_EVENT_ID_REMOTE_NAME_REQUEST);
     ret = hci_set_event_mask();
     if(ret < 0) {
         return ret;
@@ -602,6 +609,7 @@ int hci_initialize(const char* device) {
 }
 
 void hci_close() {
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
     // Close Task If Needed
     if(hci_state.task != NULL) {
         hci_state.task_request_exit = true;
@@ -609,7 +617,7 @@ void hci_close() {
         // Will both disconnect all bluetooth devices
         // And then give us the event we needed to get the HCI
         // task to exit.
-        hci_reset();
+        hci_reset_no_lock();
 
         xSemaphoreTake(hci_state.waiter_event, portMAX_DELAY);
 
@@ -620,12 +628,16 @@ void hci_close() {
     if(hci_state.file > 0) {
         ios_close(hci_state.file);
     }
+    xSemaphoreGive(hci_state.lock);
 }
 
 /* -------------------HCI Management Commands--------------------- */
 
 int hci_reset() {
-    return hci_send_command(HCI_OPCODE_RESET, NULL, 0, NULL, 0, NULL);
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
+    int ret = hci_reset_no_lock();
+    xSemaphoreGive(hci_state.lock);
+    return ret;
 }
 
 int hci_begin_discovery(
@@ -648,30 +660,36 @@ int hci_begin_discovery(
     hci_state.discovery_user_data = user_data;
 
     // Begin Discovery
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
     int ret;
     ret = hci_start_inquiry_mode(lap, length, responses);
     if(ret < 0) {
         // Clear then back out ;w;
         hci_state.discovery_discover_handler = 0;
         hci_state.discovery_complete_handler = 0;
-        return ret;
     }
+    xSemaphoreGive(hci_state.lock);
 
-    return 0;
+    return ret;
 }
 
 int hci_cancel_discovery() {
     int ret;
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
     ret = hci_cancel_inquiry();
-    if(ret < 0)
-        return ret;
+
+    hci_state.discovery_discover_handler = 0;
+    hci_state.discovery_complete_handler = 0;
+
+    xSemaphoreGive(hci_state.lock);
+    
     
     // Now we clear them out just in case
     // the event did not
     hci_state.discovery_discover_handler = 0;
     hci_state.discovery_complete_handler = 0;
 
-    return 0;
+    return ret;
 }
 
 int hci_get_remote_name(const hci_discovered_device_info_t* device, uint8_t* name) {
@@ -685,13 +703,17 @@ int hci_get_remote_name(const hci_discovered_device_info_t* device, uint8_t* nam
 
     hci_state.current_name_request = name;
 
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
     hci_send_command(HCI_OPCODE_REMOTE_NAME_REQUEST, buffer, sizeof(buffer), NULL, 0, NULL);
 
     // Poll for completion and report error
     xSemaphoreTake(hci_state.waiter_event, portMAX_DELAY);
     if(hci_state.name_request_error_code != 0) {
+        xSemaphoreGive(hci_state.lock);
         return BLERROR_HCI_REQUEST_ERR;
     }
+
+    xSemaphoreGive(hci_state.lock);
 
     return 0;
 }
@@ -741,20 +763,26 @@ int hci_create_connection(const hci_discovered_device_info_t* device, uint16_t* 
 
     hci_state.current_connection_request = connection_handle_buffer;
 
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
     int ret;
     ret = hci_send_command(HCI_OPCODE_CREATE_CONNECTION, buffer, sizeof(buffer), NULL, 0, NULL);
-    if(ret < 0)
+    if(ret < 0) {
+        xSemaphoreGive(hci_state.lock);
         return ret;
+    }
 
     // Wait for the connection to be created
     xSemaphoreTake(hci_state.waiter_event, portMAX_DELAY);
 
     // Handle Error
     if(connection_handle_buffer[0] != 0) {
+        xSemaphoreGive(hci_state.lock);
         return BLERROR_HCI_CONNECT_FAILED;
     }
 
     *handle = ((uint16_t)connection_handle_buffer[1] << 0) | ((uint16_t)connection_handle_buffer[2] << 8);
+
+    xSemaphoreGive(hci_state.lock);
 
     return 0;
 }
@@ -767,14 +795,19 @@ int hci_send_acl(uint16_t handle, hci_acl_packet_boundary_flag_t pb, hci_acl_pac
 
     // Size not rounded down/up to 32 bytes, is that bad?
     xSemaphoreTake(hci_state.outgoing_acl_packets, portMAX_DELAY);
-    return hci_transfer(HCI_IOS_IOCTL_USB_BULK, HCI_ENDPOINT_ACL_OUT, &hci_acl_packet_out, length + 4);
+
+    int ret;
+    ret = hci_transfer(HCI_IOS_IOCTL_USB_BULK, HCI_ENDPOINT_ACL_OUT, &hci_acl_packet_out, length + 4);
+
+    return ret;
 }
 
 int hci_receive_acl(uint16_t *handle, hci_acl_packet_boundary_flag_t *pb, hci_acl_packet_broadcast_flag_t *bc, uint16_t* length) {
     int ret;
     ret = hci_transfer(HCI_IOS_IOCTL_USB_BULK, HCI_ENDPOINT_ACL_IN, &hci_acl_packet_in, sizeof(hci_acl_packet_in));
-    if(ret < 0)
+    if(ret < 0) {
         return ret;
+    }
     
     uint16_t handle_in = le16toh(hci_acl_packet_in.handle); 
     
