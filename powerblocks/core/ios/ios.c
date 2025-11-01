@@ -16,8 +16,8 @@
 
 #include "ios.h"
 
-#include "system.h"
-#include "ipc.h"
+#include "system/system.h"
+#include "system/ipc.h"
 #include "ios_settings.h"
 
 #include <stdalign.h>
