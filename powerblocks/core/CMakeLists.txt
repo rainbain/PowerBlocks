@@ -15,6 +15,7 @@ add_library(
 
     ios/ios.c
     ios/ios_settings.c
+    ios/sdio.c
 
     graphics/video.c
     graphics/framebuffer.c

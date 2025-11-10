@@ -20,9 +20,9 @@ Supported:
 
 Work In Progress:
  1. WiiMote Support
+ 2. SDIO + File System Support
 
 Not Started Yet:
- 1. SDIO + File System Support
  2. Audio Interface
  3. Feature Complete GX Implementation
  4. Disk Interface
