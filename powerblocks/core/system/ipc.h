@@ -14,8 +14,7 @@
 
 #include <stdint.h>
 
-#include "FreeRTOS.h"
-#include "semphr.h"
+typedef void (*ipc_async_handler_t)(void* param, int return_value);
 
 typedef struct {
     int command;
@@ -68,8 +67,8 @@ typedef struct {
     // Since not doing this could lead to stale stack usage.
     uint32_t magic;
 
-    StaticSemaphore_t semaphore_data;
-    SemaphoreHandle_t respose;
+    ipc_async_handler_t response_handler;
+    void* params;
     
 } ipc_message;
 
@@ -88,11 +87,12 @@ extern void ipc_initialize();
 /**
  * @brief Puts a request in and gets the response.
  * 
- * Puts a request into the IPC interface and waits for a response.
- * After your done processing the response, you must call ipc_free_request
- * so that the IPC can issue new responses.
+ * Puts a request into the IPC interface.
+ * Then after its completion, the handler will be called from the interrupt service.
  * 
  * @param message Data structure to the message to send to Starlet.
+ * @param handler Handler called from interrupt service upon compilation.
+ * @param params Pointer passed to the handler.
  * @return Result as int, negative if error.
  */
-extern int ipc_request(ipc_message* message);
+extern int ipc_request(ipc_message* message, ipc_async_handler_t handler, void* params);

@@ -15,6 +15,9 @@
 #include "system/system.h"
 #include "system/exceptions.h"
 
+#include "FreeRTOS.h"
+#include "semphr.h"
+
 #include "utils/log.h"
 
 static const char* TAB = "IPC";
@@ -58,7 +61,14 @@ static void ipc_irq_handler(exception_irq_type_t irq) {
         ipc_message* message = (ipc_message*)SYSTEM_MEM_CACHED(IPC_ARMMSG);
 
         if(message->magic == IPC_MESSAGE_MAGIC) {
-            xSemaphoreGiveFromISR(message->respose, &exception_isr_context_switch_needed);
+            // Invalidate memory so we can read the return value
+            system_invalidate_dcache((void*)message, 32);
+            int return_value = message->returned;
+
+            // Clear magic
+            message->magic = 0;
+
+            message->response_handler(message->params, return_value);
         }
 
         IPC_PPCCTRL = (IPC_PPCCTRL & 0x30) | IPC_PPCCTRL_Y1 | IPC_PPCCTRL_X2; // Clear bit and relaunch
@@ -81,12 +91,13 @@ void ipc_initialize() {
     LOG_INFO(TAB, "IPC initialized.");
 }
 
-int ipc_request(ipc_message* message) {
+int ipc_request(ipc_message* message, ipc_async_handler_t handler, void* params) {
     // Treat the message as volatile
     volatile ipc_message* message_v = (volatile ipc_message*)message;
 
-    // Create the semaphore
-    message_v->respose = xSemaphoreCreateCountingStatic(10, 0, (StaticSemaphore_t*)&message_v->semaphore_data);
+    // Create response handler
+    message_v->response_handler = handler;
+    message_v->params = params;
 
     // Set the Magic
     message_v->magic = IPC_MESSAGE_MAGIC;
@@ -97,6 +108,7 @@ int ipc_request(ipc_message* message) {
 
     // Send request to hardware
     xSemaphoreTake(ipc_semaphore_busy, portMAX_DELAY);
+    
     IPC_PPCMSG = SYSTEM_MEM_PHYSICAL(message_v);
     IPC_PPCCTRL = (IPC_PPCCTRL & 0x30) | IPC_PPCCTRL_X1;
 
@@ -104,15 +116,6 @@ int ipc_request(ipc_message* message) {
     xSemaphoreTake(ipc_semaphore_acknowledge, portMAX_DELAY);
     xSemaphoreGive(ipc_semaphore_busy);
 
-    // Wait for response
-    xSemaphoreTake((SemaphoreHandle_t)message_v->respose, portMAX_DELAY);
-
-    // Invalidate memory so we can read the return value
-    system_invalidate_dcache((void*)message_v, 32);
-    int result = message_v->returned;
-
-    // Clear magic
-    message_v->magic = 0;
-
-    return result;
+    
+    return 0;
 }
