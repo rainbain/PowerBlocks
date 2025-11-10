@@ -23,9 +23,9 @@ Work In Progress:
  2. SDIO + File System Support
 
 Not Started Yet:
- 2. Audio Interface
- 3. Feature Complete GX Implementation
- 4. Disk Interface
- 5. WiFi Support
+ 1. Audio Interface
+ 2. Feature Complete GX Implementation
+ 3. Disk Interface
+ 4. WiFi Support
 
  For a more in-depth todo for known missing features of supported functionality check: [TODOS.md](docs/TODOS.md).
