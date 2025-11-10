@@ -33,8 +33,8 @@ static const char* TAG = "BLTOOLS";
 #define BLTOOLS_DISCOVERY_TASK_QUEUE_SIZE 5
 
 #define BLTOOLS_ERROR_LOGGING
-#define BLTOOLS_INFO_LOGGING
-#define BLTOOLS_DEBUG_LOGGING
+//#define BLTOOLS_INFO_LOGGING
+//#define BLTOOLS_DEBUG_LOGGING
 
 #ifdef BLTOOLS_ERROR_LOGGING
 #define BLTOOLS_LOG_ERROR(fmt, ...) LOG_ERROR(TAG, fmt, ##__VA_ARGS__)
@@ -56,7 +56,6 @@ static const char* TAG = "BLTOOLS";
 
 typedef struct {
     uint8_t message;
-    hci_discovered_device_info_t info;
 } bltools_discovery_task_queue_item_t;
 
 typedef struct {
@@ -67,6 +66,10 @@ typedef struct {
 
     // Discovery time tracking
     TickType_t discovery_start;
+
+    // Currently discovered device for processing
+    bool device_found;
+    hci_discovered_device_info_t discovered_device;
     
     // Static Data
     bltools_discovery_task_queue_item_t queue_storage_buffer[BLTOOLS_DISCOVERY_TASK_QUEUE_SIZE];
@@ -217,64 +220,60 @@ int bltools_begin_automatic_discovery(TickType_t duration) {
 }
 
 #define DISCOVERY_TASK_QUEUE_START_DISCOVERY   0
-#define DISCOVERY_TASK_QUEUE_DISCOVERED_DEVICE 1
 #define DISCOVERY_TASK_QUEUE_DISCOVERY_END     2
 #define DISCOVERY_TASK_QUEUE_DISCOVERY_ERROR   3
 
-static void bltools_send_queue(bltools_discovery_task_t *inst, const hci_discovered_device_info_t* discovery, uint8_t message) {
+static void bltools_send_queue(bltools_discovery_task_t *inst, uint8_t message) {
     bltools_discovery_task_queue_item_t item;
 
     item.message = message;
-    if(discovery == NULL) {
-        memset(&item.info, 0, sizeof(item.info));
-    } else {
-        memcpy(&item.info, discovery, sizeof(item.info));
-    }
 
     if(xQueueSend(inst->task_queue, &item, 0) != pdPASS) {
-        BLTOOLS_LOG_ERROR("Task queue full. Having to wait.");
-        xQueueSend(inst->task_queue, &item, portMAX_DELAY);
+        BLTOOLS_LOG_ERROR("Task queue full! Dropping");
     }
 }
 
 static void hci_discovered_callback(void* user_data, const hci_discovered_device_info_t* device) {
     bltools_discovery_task_t* inst = (bltools_discovery_task_t*)user_data;
 
-    bltools_send_queue(inst, device, DISCOVERY_TASK_QUEUE_DISCOVERED_DEVICE);
+    BLTOOLS_LOG_DEBUG("Adding discovered device.");
+    if(inst->device_found) {
+        BLTOOLS_LOG_ERROR("Can't add discovered device. One already found!?!?");
+        return;
+    }
+
+    memcpy(&inst->discovered_device, device, sizeof(inst->discovered_device));
+    inst->device_found = true;
 }
 
 static void hci_discovery_complete_callback(void* user_data, uint8_t error) {
     bltools_discovery_task_t* inst = (bltools_discovery_task_t*)user_data;
 
-    // If ended in error. Wait a second before starting anew
+    BLTOOLS_LOG_DEBUG("Discovery Ended: %02x", error);
+
     if(error != 0) {
-        bltools_send_queue(inst, NULL, DISCOVERY_TASK_QUEUE_DISCOVERY_ERROR);
+        bltools_send_queue(inst, DISCOVERY_TASK_QUEUE_DISCOVERY_ERROR);
     } else {
-        bltools_send_queue(inst, NULL, DISCOVERY_TASK_QUEUE_DISCOVERY_END);
-    }
-}
+        bltools_send_queue(inst, DISCOVERY_TASK_QUEUE_DISCOVERY_END);
+    }}
 
 static void bltools_task_start_discovery(bltools_discovery_task_t* inst) {
-    uint64_t length_seconds = inst->remaining_duration / configTICK_RATE_HZ;
-    if(length_seconds > 0x30) {
-        length_seconds = 0x30;
-    }
-
     inst->discovery_start = xTaskGetTickCount();
 
+    BLTOOLS_LOG_DEBUG("Starting HCI Discovery");
+
     int ret;
-    ret = hci_begin_discovery(HCI_INQUIRY_MODE_GENERAL_ACCESS, length_seconds, 0,
+    ret = hci_begin_discovery(HCI_INQUIRY_MODE_GENERAL_ACCESS, 1, 1,
     hci_discovered_callback, hci_discovery_complete_callback, inst);
 }
 
 static void bltools_task_discovered_device(bltools_discovery_task_t* inst, const hci_discovered_device_info_t* discovery) {
     uint8_t name[HCI_MAX_NAME_REQUEST_LENGTH];
-    
+
     int ret = hci_get_remote_name(discovery, name);
     if(ret < 0) {
         return;
     }
-
     bltools_load_compatable_driver(discovery, (const char*)name);
 }
 
@@ -300,28 +299,38 @@ static void bltools_task_restart_discovery(bltools_discovery_task_t* inst) {
 static void bltools_discovery_task(void* instance_v) {
     bltools_discovery_task_t* inst = (bltools_discovery_task_t*)instance_v;
 
+    inst->device_found = false;
+
     bltools_discovery_task_queue_item_t item;
 
     // Initial command to start discovery
-    bltools_send_queue(inst, NULL, DISCOVERY_TASK_QUEUE_START_DISCOVERY);
+    bltools_send_queue(inst, DISCOVERY_TASK_QUEUE_START_DISCOVERY);
 
     while(true) {
         xQueueReceive(inst->task_queue, &item, portMAX_DELAY);
 
+        BLTOOLS_LOG_DEBUG("Processing event: %d", item.message);
+
         switch(item.message) {
             case DISCOVERY_TASK_QUEUE_START_DISCOVERY:
                 bltools_task_start_discovery(inst);
-                break;
-            
-            case DISCOVERY_TASK_QUEUE_DISCOVERED_DEVICE:
-                bltools_task_discovered_device(inst, &item.info);
                 break;
             case DISCOVERY_TASK_QUEUE_DISCOVERY_ERROR:
                 BLTOOLS_LOG_ERROR("Discovery error, Restarting Discovery.");
                 // No break, keep going
 
             case DISCOVERY_TASK_QUEUE_DISCOVERY_END:
-                // Wait a half second before restarting
+                // Wait before continuing.
+                // Seems HCI likes to randomly give out on us if we follow it up too quickly.
+                // Could be that theres still a discovery being reported?
+                vTaskDelay(100 / portTICK_RATE_MS);
+
+                // Handle any discovered devices
+                if(inst->device_found) {
+                    bltools_task_discovered_device(inst, &inst->discovered_device);
+                    inst->device_found = false;
+                }
+
                 bltools_task_restart_discovery(inst);
                 break;
             default:

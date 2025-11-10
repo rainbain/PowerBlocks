@@ -93,12 +93,12 @@ void wiimote_sys_phrase_settings() {
     WIIMOTE_LOG_DEBUG("  Registered Wiimotes (%d):", wiimote_sys_config.wiimotes.count);
     for(int i = 0; i < wiimote_sys_config.wiimotes.count; i++) {
         WIIMOTE_LOG_DEBUG("    %02X:%02X:%02X:%02X:%02X:%02X %s",
-        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[5],
-        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[4],
-        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[3],
-        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[2],
-        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[1],
         wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[0],
+        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[1],
+        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[2],
+        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[3],
+        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[4],
+        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[5],
         wiimote_sys_config.wiimotes.registered_entrys[i].name);
     }
     return;
@@ -110,8 +110,8 @@ ERROR:
 
 void wiimote_connect_registered() {
     hci_discovered_device_info_t info;
-    info.page_scan_repetition_mode = 0x01; // How often to scan, default "safe" value
-    info.class_of_device = 0; /// TODO: Maybe put wiimote COD? Eh, it will find it by name
+    info.page_scan_repetition_mode = 0x02; // How often to scan, default "safe" value
+    info.class_of_device = 0x2504; // Taken from my wiimote, hopefully this works for all wiimotes?
     info.clock_offset = 0; // Unknow - HCI find one for us
 
     for(int i = 0; i < wiimote_sys_config.wiimotes.count; i++) {

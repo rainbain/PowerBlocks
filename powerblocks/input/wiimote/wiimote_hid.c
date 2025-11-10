@@ -179,6 +179,8 @@ static void wiimote_on_report_in(void* channel_v, void* wiimote_v) {
     int report_length = payload_length - 2;
     uint8_t report_type = payload[1];
 
+    WIIMOTE_LOG_DEBUG("Report %02X in.", report_type);
+
     switch(report_type) {
         case WIIMOTE_REPORT_STATUS_INFO:
             wiimote_handle_status_report(wiimote, report, report_length);
@@ -338,16 +340,19 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
     }
 
     // Open L2CAP Connection
-    ret = l2cap_open_device(&wiimote->device, handle);
+    ret = l2cap_open_device(&wiimote->device, handle, discovery->address);
     if(ret < 0) {
         WIIMOTE_LOG_ERROR("Failed to make L2CAP connection! %d", ret);
         return ret;
     }
 
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+
     // TODO: If these fail, close the L2CAP instance correctly
 
     // Open Control Channel
     // Used for commands (though I dont think it uses any)
+    WIIMOTE_LOG_INFO("Opening Control Channel");
     ret = l2cap_open_channel(&wiimote->device, &wiimote->control_channel, 0x11,
         wiimote->wiimote_control_channel_buffer, sizeof(wiimote->wiimote_control_channel_buffer));
     if(ret < 0) {
@@ -355,8 +360,11 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
         return ret;
     }
 
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+
     // Open Interrupt Channel
-    // Used for data
+    // Used for 
+    WIIMOTE_LOG_INFO("Opening Interrupt Channel");
     ret = l2cap_open_channel(&wiimote->device, &wiimote->interrupt_channel, 0x13,
         wiimote->wiimote_interrupt_channel_buffer, sizeof(wiimote->wiimote_interrupt_channel_buffer));
     if(ret < 0) {
@@ -364,28 +372,47 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
         return ret;
     }
 
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+
     // Set up events
     l2cap_set_channel_receive_event(&wiimote->interrupt_channel, wiimote_on_report_in, wiimote);
 
-    // LEDs
-    ret = wiimote_hid_set_leds(wiimote, 0x10 << (slot & 0b11));
-    if(ret < 0)
-        return ret;
-    
-    // Request calibration data
-    ret = wiimote_hid_request_calibration_data(wiimote);
+
+    WIIMOTE_LOG_INFO("Configuring Wiimote");
+
+    uint8_t payload[3] = {WIIMOTE_HID_OUTPUT_REPORT, 0x15, 0x00};
+
+    ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
     if(ret < 0)
         return ret;
 
     // Default reporting mode
     wiimote_hid_set_report(wiimote, 0x30, false);
-    if(ret < 0)
+    if(ret < 0) {
+        WIIMOTE_LOG_ERROR("Set report failed %d", ret);
         return ret;
+    }
+
+    // LEDs
+    ret = wiimote_hid_set_leds(wiimote, 0x10 << (slot & 0b11));
+    if(ret < 0) {
+        WIIMOTE_LOG_ERROR("Set LEDs failed %d", ret);
+        return ret;
+    }
+    
+    // Request calibration data
+    ret = wiimote_hid_request_calibration_data(wiimote);
+    if(ret < 0) {
+        WIIMOTE_LOG_ERROR("Request calibration data failed %d", ret);
+        return ret;
+    }
 
     // Get the camera going
     wiimote_initialize_ir_camera(wiimote);
-    if(ret < 0)
+    if(ret < 0) {
+        WIIMOTE_LOG_ERROR("Initialize IR failed %d", ret);
         return ret;
+    }
 
     return 0;
 }
@@ -438,16 +465,19 @@ int wiimote_hid_set_report(wiimote_hid_t* wiimote, uint8_t report_type, bool upd
 // White lists of accepted parameters for a remote to connect.
 // Only any one of the checks has to pass for it to try and connect.
 static uint32_t wiimote_whitelist_cods[] = {
-    0x480400
+    0x2504
 };
 
 static const char* wiimote_whitelist_names[] = {
     "Nintendo RVL-CNT-01",
-    "Nintendo RVL-CNT-01-TR" // New wii remote plus
+    "Nintendo RVL-CNT-01-TR", // New wii remote plus
+    "controlboard-dev0"
 };
 
 bool wiimote_hid_driver_filter(const hci_discovered_device_info_t* device, const char* device_name) {
     uint32_t cod = device->class_of_device;
+
+    LOG_DEBUG(WIIMOTE_TAG, "Checking Name: \"%s\", COD: %08X", device_name, device->class_of_device);
     
     // Check for a valid COD
     for(int i = 0; i < sizeof(wiimote_whitelist_cods) / sizeof(wiimote_whitelist_cods[0]); i++) {
@@ -465,7 +495,7 @@ bool wiimote_hid_driver_filter(const hci_discovered_device_info_t* device, const
         }
     }
 
-    WIIMOTE_LOG_DEBUG("COD and Name check failed, device rejected.");
+    //WIIMOTE_LOG_DEBUG("COD and Name check failed, device rejected.");
     return false;
 }
 

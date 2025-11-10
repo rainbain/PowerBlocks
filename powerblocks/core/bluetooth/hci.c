@@ -117,6 +117,9 @@ typedef enum {
 #define HCI_MAX_COMMAND_DATA_LENGTH 64
 #define HCI_MAX_EVENT_LENGTH        255
 
+// How long it will wait for the thread to return an event
+#define HCI_WAITER_TIMEOUT 6000 // 6s
+
 typedef struct {
     uint8_t event_code;
     uint8_t parameter_length;
@@ -178,6 +181,8 @@ static struct {
     SemaphoreHandle_t lock; // Locks usage of HCI
     SemaphoreHandle_t waiter_event; // Reply to HCI command is ready.
     SemaphoreHandle_t outgoing_acl_packets; // Track how many outgoing hcl packets
+    SemaphoreHandle_t acl_send_lock;
+    SemaphoreHandle_t acl_recv_lock;
 
     // Current HCI Request
     hci_command_request* current_command;
@@ -193,8 +198,8 @@ static struct {
     uint64_t event_mask;
 
     // Discovery State
-    hci_discovered_device_handler discovery_discover_handler;
-    hci_discovery_complete_handler discovery_complete_handler;
+    volatile hci_discovered_device_handler discovery_discover_handler;
+    volatile hci_discovery_complete_handler discovery_complete_handler;
     void* discovery_user_data;
 
     StaticSemaphore_t semaphore_data[4];
@@ -218,6 +223,7 @@ static void hci_task(void* unused_1);
 // (wiibrew)
 // Data buffer should be 32 byte aligned
 static int hci_transfer(uint8_t ioctl, uint8_t endpoint, void* buffer, uint16_t size) {
+
     alignas(USB_ALIGN) uint8_t b_endpoint_buffer[32];
     alignas(USB_ALIGN) uint16_t w_length_buffer[16]; // Big Endianness This Time
 
@@ -225,8 +231,8 @@ static int hci_transfer(uint8_t ioctl, uint8_t endpoint, void* buffer, uint16_t 
     w_length_buffer[0] = htobe16(size);
 
     alignas(USB_ALIGN) ios_ioctlv_t vectors[3] = {
-        { .data = &b_endpoint_buffer, .size = 1 },
-        { .data = &w_length_buffer, .size = 2 },
+        { .data = b_endpoint_buffer, .size = 1 },
+        { .data = w_length_buffer, .size = 2 },
         { .data = buffer, .size = size },
     };
 
@@ -236,6 +242,37 @@ static int hci_transfer(uint8_t ioctl, uint8_t endpoint, void* buffer, uint16_t 
         return BLERROR_IOS_EXCEPTION;
     }
     return ret;
+}
+
+static int hci_transfer_async(uint8_t ioctl, uint8_t endpoint, void* buffer, uint16_t size, uint8_t* ipc_buffer, ipc_async_handler_t handler, void* params) {
+    ios_ioctlv_t* vectors = (ios_ioctlv_t*)(ipc_buffer + 0);
+    ios_ioctlv_t* vectors_buffer = (ios_ioctlv_t*)(ipc_buffer + 32);
+    uint8_t* b_endpoint_buffer = (uint8_t*)(ipc_buffer + 64);
+    uint16_t* w_length_buffer = (uint16_t*)(ipc_buffer + 96);
+    ipc_message* message = (ipc_message*)(ipc_buffer + 128);
+
+    b_endpoint_buffer[0] = endpoint;
+    w_length_buffer[0] = htobe16(size);
+
+    vectors[0].data = b_endpoint_buffer; vectors[0].size = 1;
+    vectors[1].data = w_length_buffer; vectors[1].size = 2;
+    vectors[2].data = buffer; vectors[2].size = size;
+
+    int ret = ios_ioctlv_async(hci_state.file, ioctl, 2, 1, vectors, message, vectors_buffer, handler, params);
+    if(ret < 0) {
+        HCI_LOG_ERROR(TAG, "Send Command Failed, IOS ioctlv failed: %d", ret);
+        return BLERROR_IOS_EXCEPTION;
+    }
+    return ret;
+}
+
+// Waits for a waiter event with timeout
+static int hci_command_wait_response() {
+    if(xSemaphoreTake(hci_state.waiter_event, HCI_WAITER_TIMEOUT / portTICK_PERIOD_MS) != pdTRUE) {
+        HCI_LOG_ERROR(TAG, "Wait response timed out!");
+        return BLERROR_TIMEOUT;
+    }
+    return 0;
 }
 
 // Send a command off to the HCI.
@@ -297,7 +334,11 @@ static int hci_send_command(uint16_t opcode, const void* params, size_t param_le
     }
 
     // Poll for completion and report error
-    xSemaphoreTake(hci_state.waiter_event, portMAX_DELAY);
+    ret = hci_command_wait_response();
+    if(ret < 0) {
+        HCI_LOG_ERROR(TAG, "Send command confirmation never came! Opcode: %04X", opcode);
+        return ret;
+    }
     if(request.error_code != 0) {
         return BLERROR_HCI_REQUEST_ERR;
     }
@@ -541,7 +582,7 @@ int hci_initialize(const char* device) {
 
     // Create semaphores.
     hci_state.lock = xSemaphoreCreateMutexStatic(&hci_state.semaphore_data[0]);
-    hci_state.waiter_event = xSemaphoreCreateCountingStatic(5, 0, &hci_state.semaphore_data[1]);
+    hci_state.waiter_event = xSemaphoreCreateCountingStatic(100, 0, &hci_state.semaphore_data[1]);
 
     BaseType_t err = xTaskCreate(hci_task, TAG, HCI_TASK_STACK_SIZE, NULL, HCI_TASK_PRIORITY, &hci_state.task);
     if(err != pdPASS) {
@@ -594,10 +635,7 @@ int hci_initialize(const char* device) {
     // I will assume the device is capable of the capabilites needed to connect to wiimotes lol.
     
     // Now we set the event mask
-    hci_state.event_mask = (1<<HCI_EVENT_ID_INQUIRY_COMPLETE) | (1<<HCI_EVENT_ID_INQUIRY_RESULT) |
-                           (1<<HCI_EVENT_ID_CONNECTION_COMPLETE) |
-                           (1<<HCI_EVENT_ID_CONNECTION_REQUEST) |
-                           (1<<HCI_EVENT_ID_REMOTE_NAME_REQUEST);
+    hci_state.event_mask = 0xFFFFFBFF07F8BF3D; // All the events.
     ret = hci_set_event_mask();
     if(ret < 0) {
         return ret;
@@ -619,7 +657,12 @@ void hci_close() {
         // task to exit.
         hci_reset_no_lock();
 
-        xSemaphoreTake(hci_state.waiter_event, portMAX_DELAY);
+        // Poll for completion and report error
+        int ret;
+        ret = hci_command_wait_response();
+        if(ret < 0) {
+            HCI_LOG_ERROR(TAG, "Failed to get confirmation of task closing!");
+        }
 
         vTaskDelete(hci_state.task);
     }
@@ -653,14 +696,15 @@ int hci_begin_discovery(
     // Or else, we may override it while discovery is running
     if(on_discovered == NULL)
         return BLERROR_RUNTIME;
+    
+    // Begin Discovery
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
 
     // Set handlers then
     hci_state.discovery_discover_handler = on_discovered;
     hci_state.discovery_complete_handler = on_complete;
     hci_state.discovery_user_data = user_data;
 
-    // Begin Discovery
-    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
     int ret;
     ret = hci_start_inquiry_mode(lap, length, responses);
     if(ret < 0) {
@@ -682,12 +726,6 @@ int hci_cancel_discovery() {
     hci_state.discovery_complete_handler = 0;
 
     xSemaphoreGive(hci_state.lock);
-    
-    
-    // Now we clear them out just in case
-    // the event did not
-    hci_state.discovery_discover_handler = 0;
-    hci_state.discovery_complete_handler = 0;
 
     return ret;
 }
@@ -701,13 +739,17 @@ int hci_get_remote_name(const hci_discovered_device_info_t* device, uint8_t* nam
     buffer[8] = device->clock_offset & 0xFF;
     buffer[9] = device->clock_offset >> 8;
 
-    hci_state.current_name_request = name;
-
     xSemaphoreTake(hci_state.lock, portMAX_DELAY);
+
+    hci_state.current_name_request = name;
     hci_send_command(HCI_OPCODE_REMOTE_NAME_REQUEST, buffer, sizeof(buffer), NULL, 0, NULL);
 
     // Poll for completion and report error
-    xSemaphoreTake(hci_state.waiter_event, portMAX_DELAY);
+    int ret = hci_command_wait_response();
+    if(ret < 0) {
+        xSemaphoreGive(hci_state.lock);
+        return ret;
+    }
     if(hci_state.name_request_error_code != 0) {
         xSemaphoreGive(hci_state.lock);
         return BLERROR_HCI_REQUEST_ERR;
@@ -759,11 +801,11 @@ int hci_create_connection(const hci_discovered_device_info_t* device, uint16_t* 
     buffer[9] = 0x0; // Reserved
     buffer[10] = device->clock_offset & 0xFF;
     buffer[11] = device->clock_offset >> 8;
-    buffer[12] = 0x0; // No Role Switching
-
-    hci_state.current_connection_request = connection_handle_buffer;
+    buffer[12] = 0x01; // No Role Switching
 
     xSemaphoreTake(hci_state.lock, portMAX_DELAY);
+    hci_state.current_connection_request = connection_handle_buffer;
+
     int ret;
     ret = hci_send_command(HCI_OPCODE_CREATE_CONNECTION, buffer, sizeof(buffer), NULL, 0, NULL);
     if(ret < 0) {
@@ -772,7 +814,12 @@ int hci_create_connection(const hci_discovered_device_info_t* device, uint16_t* 
     }
 
     // Wait for the connection to be created
-    xSemaphoreTake(hci_state.waiter_event, portMAX_DELAY);
+    // Poll for completion and report error
+    ret = hci_command_wait_response();
+    if(ret < 0) {
+        xSemaphoreGive(hci_state.lock);
+        return ret;
+    }
 
     // Handle Error
     if(connection_handle_buffer[0] != 0) {
@@ -802,21 +849,17 @@ int hci_send_acl(uint16_t handle, hci_acl_packet_boundary_flag_t pb, hci_acl_pac
     return ret;
 }
 
-int hci_receive_acl(uint16_t *handle, hci_acl_packet_boundary_flag_t *pb, hci_acl_packet_broadcast_flag_t *bc, uint16_t* length) {
-    int ret;
-    ret = hci_transfer(HCI_IOS_IOCTL_USB_BULK, HCI_ENDPOINT_ACL_IN, &hci_acl_packet_in, sizeof(hci_acl_packet_in));
-    if(ret < 0) {
-        return ret;
-    }
-    
-    uint16_t handle_in = le16toh(hci_acl_packet_in.handle); 
+int hci_receive_acl_async(hci_acl_packet_t* acl_buffer, uint8_t* ipc_buffer, ipc_async_handler_t handler, void* params) {
+    return hci_transfer_async(HCI_IOS_IOCTL_USB_BULK, HCI_ENDPOINT_ACL_IN, acl_buffer, sizeof(*acl_buffer), ipc_buffer, handler, params);
+}
+
+void hci_decode_received_acl(uint16_t *handle, hci_acl_packet_boundary_flag_t *pb, hci_acl_packet_broadcast_flag_t *bc, uint16_t* length, const hci_acl_packet_t* acl_buffer) {
+    uint16_t handle_in = le16toh(acl_buffer->handle); 
     
     *handle = handle_in & 0x0FFF;
     *pb = (handle_in >> 12) & 3;
     *bc = (handle_in >> 14) & 3;
-    *length = le16toh(hci_acl_packet_in.size);
-
-    return 0;
+    *length = le16toh(acl_buffer->size);
 }
 
 /* -------------------HCI Task--------------------- */
@@ -915,14 +958,18 @@ static void hci_task_handle_inquiry_complete(const hci_event* event) {
         HCI_LOG_INFO(TAG, "Inquiry Command Completed");
     }
 
-    if(hci_state.discovery_complete_handler) {
-        hci_state.discovery_complete_handler(hci_state.discovery_user_data, event->parameters[0]);
-    }
+    // Save the old one, so that we may
+    // Set it to null before calling the handler
+    hci_discovery_complete_handler complete_handler = hci_state.discovery_complete_handler;
 
     // Clear out discovery state since were done
     // And may accept new ones
     hci_state.discovery_complete_handler = NULL;
     hci_state.discovery_discover_handler = NULL;
+
+    if(complete_handler) {
+        complete_handler(hci_state.discovery_user_data, event->parameters[0]);
+    }
 }
 
 static void hci_task_handle_inquiry_result(const hci_event* event) {
@@ -1049,7 +1096,8 @@ static void hci_task_handle_acl_complete_packets(const hci_event* event) {
 SemaphoreHandle_t hcl_acl_packet_out_lock;
 hci_event hci_event_buffer MEM2 ALIGN(32);
 hci_acl_packet_t hci_acl_packet_out ALIGN(32) MEM2;
-hci_acl_packet_t hci_acl_packet_in ALIGN(32) MEM2;
+hci_acl_packet_t hci_acl_packet_in_0 ALIGN(32) MEM2;
+hci_acl_packet_t hci_acl_packet_in_1 ALIGN(32) MEM2;
 
 // This task is inchange of managing HCI Events.
 static void hci_task(void* unused_1) {
@@ -1057,6 +1105,12 @@ static void hci_task(void* unused_1) {
         hci_receive_event(&hci_event_buffer);
 
         switch(hci_event_buffer.event_code) {
+            // Not a valid event,
+            // But for some reason during
+            // discovery it likes to make a few of these.
+            case 0x00:
+                break;
+
             case HCI_EVENT_CODE_INQUIRY_COMPLETE:
                 hci_task_handle_inquiry_complete(&hci_event_buffer);
                 break;
@@ -1091,6 +1145,7 @@ static void hci_task(void* unused_1) {
             default:
                 HCI_LOG_ERROR(TAG, "Unhandled Event: %02X", hci_event_buffer.event_code);
                 break;
+            
         }
     }
 

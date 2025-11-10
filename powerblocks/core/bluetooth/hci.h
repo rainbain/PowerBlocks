@@ -22,6 +22,7 @@
 #include "semphr.h"
 
 #include "powerblocks/core/system/system.h"
+#include "powerblocks/core/ios/ios.h"
 
 typedef struct {
     uint8_t address[6];
@@ -63,6 +64,9 @@ typedef enum {
 // This must be at least greater than the max size
 // Reported by the hardware. On the wii it reports 339 bytes.
 #define HCI_MAX_ACL_DATA_LENGTH 512
+
+// Defines the amount of data on the stack needed for the ACL receive, used to be kept around for async
+#define HCI_ACL_RECEIVE_IPC_BUFFER_SIZE (32 + 32 + 32 + 32 + sizeof(ipc_message))
 
 typedef struct {
     uint16_t handle;
@@ -132,6 +136,9 @@ extern int hci_reset();
  * Only 1 thing can be running discovery at a time. Calling this while a discovery
  * session is already running will return an error.
  * 
+ * You generally need to wait for the inquiry to end before doing anything.
+ * ACL packets are fine though.
+ * 
  * Handlers called from the HCI Task.
  * Please do not call HCI function from the HCI task.
  * 
@@ -163,6 +170,9 @@ extern int hci_cancel_discovery();
  * 
  * Useful for for device detection and enumeration.
  * 
+ * IMPORTANT: You can't call this during an inquiry, you must
+ * wait for it to end.
+ * 
  * @param device Device information to poll.
  * @param name Name output, must be HCI_MAX_NAME_REQUEST_LENGTH in size.
  * 
@@ -184,7 +194,8 @@ extern int hci_create_connection(const hci_discovered_device_info_t* device, uin
 // You can lower the amount of memcpys in ACL transactions
 extern SemaphoreHandle_t hcl_acl_packet_out_lock;
 extern hci_acl_packet_t hci_acl_packet_out ALIGN(32) MEM2;
-extern hci_acl_packet_t hci_acl_packet_in ALIGN(32) MEM2;
+extern hci_acl_packet_t hci_acl_packet_in_0 ALIGN(32) MEM2;
+extern hci_acl_packet_t hci_acl_packet_in_1 ALIGN(32) MEM2;
 
 /**
  * @brief Sends a ACL Packet
@@ -205,13 +216,32 @@ extern hci_acl_packet_t hci_acl_packet_in ALIGN(32) MEM2;
 extern int hci_send_acl(uint16_t handle, hci_acl_packet_boundary_flag_t pb, hci_acl_packet_broadcast_flag_t bc, uint16_t length);
 
 /**
- * @brief Receives a ACL Packet
+ * @brief Receives a ACL Packet Asynchronously
  * 
- * These are the asynchronous data packets that are received from devices.
+ * Unlike send, this is done asynchronously, and returns early,
+ * so that you can double buffer and make sure to never miss an ACL packet.
  * Multiplexing / Reassembly / Channels are handled by L2CAP that makes these
  * 
  * These parameters will be set into hci_acl_packet_in.
  * Your data and length is available in there.
+ * 
+ * Also must be provided is a buffer size HCI_ACL_RECEIVE_IPC_BUFFER_SIZE for storing the IPC
+ * data. So that it can store the message in the mean time until the callback is called.
+ * 
+ * @param buffer ACL packet buffer to receive into.
+ * @param ipc_buffer Data buffer for the IPC data. Needs to be kept around until the callback is called. Needs to be 32 byte aligned.
+ * @param handler Called when data is received
+ * @param params Pointer passed to handler
+ * 
+ * @return Negative if Error
+ */
+extern int hci_receive_acl_async(hci_acl_packet_t* acl_buffer, uint8_t* ipc_buffer, ipc_async_handler_t handler, void* params);
+
+
+/**
+ * @brief Decodes a received ACL packet.
+ * 
+ * Like send, gets back the packet boundary, broadcast flags, and more.
  * 
  * @param handle Bluetooth Connection Handle In. Not NULL!
  * @param pb Packet boundary Flag In. Not NULL!
@@ -220,4 +250,4 @@ extern int hci_send_acl(uint16_t handle, hci_acl_packet_boundary_flag_t pb, hci_
  * 
  * @return Negative if Error
  */
-extern int hci_receive_acl(uint16_t *handle, hci_acl_packet_boundary_flag_t *pb, hci_acl_packet_broadcast_flag_t *bc, uint16_t* length);
+extern void hci_decode_received_acl(uint16_t *handle, hci_acl_packet_boundary_flag_t *pb, hci_acl_packet_broadcast_flag_t *bc, uint16_t* length, const hci_acl_packet_t* acl_buffer);

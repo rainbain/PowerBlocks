@@ -28,7 +28,7 @@
 
 #define L2CAP_CHANNEL_SIGNALS 0x0001
 
-#define L2CAP_DEFAULT_MTU           672
+#define L2CAP_DEFAULT_MTU           185
 #define L2CAP_DEFAULT_FLUSH_TIMEOUT 0xFFFF
 
 typedef void (*l2cap_channel_event_t)(void* channel, void* user);
@@ -57,8 +57,8 @@ typedef struct {
     int fifo_read_head;
 
     // Track incoming signals
-    l2cap_signal_t* incoming_signal;
-    uint8_t incoming_id;
+    volatile l2cap_signal_t* incoming_signal;
+    volatile uint8_t incoming_id;
     SemaphoreHandle_t signal_waiter;
 
     // Event for when a new received packet is made available.
@@ -85,6 +85,8 @@ typedef struct {
     // L2CAP Reading into Handle State
     l2cap_channel_t* reading_channel;
     uint16_t reading_remaining;
+
+    uint8_t mac_address[6];
 
     StaticSemaphore_t semaphore_data;
 } l2cap_device_t;
@@ -128,10 +130,11 @@ extern void l2cap_close();
  * 
  * @param device_handle L2CAP Device Handle To Create
  * @param hci_device_handle Device handle created by hci_create_connection
+ * @param mac_address MAC address of the device. Used to prevent duplicate connections.
  * 
  * @return Negative if Error.
  */
-extern int l2cap_open_device(l2cap_device_t* device_handle, uint16_t hci_device_handle);
+extern int l2cap_open_device(l2cap_device_t* device_handle, uint16_t hci_device_handle, const uint8_t* mac_address);
 
 /**
  * @brief Closes a L2CAP Connection

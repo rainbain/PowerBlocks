@@ -393,7 +393,7 @@ void wiimotes_initialize() {
     bltools_register_driver(driver);
 
     // Connect wiimotes that have been connected in the past
-    wiimote_connect_registered();
+    //wiimote_connect_registered();
 }
 
 static void wiimote_update(const wiimote_raw_t* raw_data, wiimote_t* output) {
