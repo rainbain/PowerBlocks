@@ -294,6 +294,8 @@ static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
         ret = wiimote_write_memory(wiimote, WIIMOTE_MEMORY_REGISTER_IR_BLOCK1, mode_data, 9);
         if(ret < 0)
             return ret;
+
+        
         ret = wiimote_write_memory(wiimote, WIIMOTE_MEMORY_REGISTER_IR_BLOCK2, mode_data + 9, 2);
         if(ret < 0)
             return ret;
@@ -308,6 +310,7 @@ static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
         ret = wiimote_write_memory(wiimote, WIIMOTE_MEMORY_REGISTER_IR, &payload, sizeof(payload));
         if(ret < 0)
             return ret;
+        
     }
 
     return 0;
@@ -346,8 +349,6 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
         return ret;
     }
 
-    vTaskDelay(500 / portTICK_PERIOD_MS);
-
     // TODO: If these fail, close the L2CAP instance correctly
 
     // Open Control Channel
@@ -360,8 +361,6 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
         return ret;
     }
 
-    vTaskDelay(500 / portTICK_PERIOD_MS);
-
     // Open Interrupt Channel
     // Used for 
     WIIMOTE_LOG_INFO("Opening Interrupt Channel");
@@ -371,8 +370,6 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
         WIIMOTE_LOG_ERROR("Failed to make interrupt channel! %d", ret);
         return ret;
     }
-
-    vTaskDelay(500 / portTICK_PERIOD_MS);
 
     // Set up events
     l2cap_set_channel_receive_event(&wiimote->interrupt_channel, wiimote_on_report_in, wiimote);
@@ -443,13 +440,16 @@ int wiimote_hid_set_report(wiimote_hid_t* wiimote, uint8_t report_type, bool upd
     switch(report_type) {
         default:
             mode = 0x01; // Basic
+            break;
         
         case WIIMOTE_REPORT_BUTTONS_ACCL_IR12:
             mode = 0x03; // Extended
+            break;
         
         case WIIMOTE_REPORT_INTERLEAVED_A:
         case WIIMOTE_REPORT_INTERLEAVED_B:
             mode = 0x05; // Full
+            break;
     }
 
     ret = 0;
