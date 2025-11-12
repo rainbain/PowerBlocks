@@ -33,10 +33,10 @@ int main() {
     // Set the retrace callback to flush the framebuffer before drawing.
     video_set_retrace_callback(retrace_callback);
 
-    // Create Blue Background
+    // Create Black Background
     framebuffer_fill_rgba(&frame_buffer, 0x000000FF, vec2i_new(0,0), vec2i_new(VIDEO_WIDTH, VIDEO_HEIGHT));
 
-    // Back Text To Black, Blue Background
+    // Back Text To White with a Black Background
     console_set_text_color(0xFFFFFFFF, 0x000000FF);
 
     // print super cool hello message
