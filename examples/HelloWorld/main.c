@@ -64,9 +64,6 @@ int main() {
             vec2i_add(console_cursor_position, vec2i_new(0, -console_font->character_size.y))
         );
 
-        // Make it so we can see the framebuffer changes
-        system_flush_dcache(&frame_buffer, sizeof(frame_buffer));
-
         // Wait for vsync
         video_wait_vsync();
     }
