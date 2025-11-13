@@ -282,7 +282,7 @@ extern void system_delay_int(uint64_t ticks);
  * Does not call sync after, so right after this the cache
  * may not be done flushing.
  */
-extern void system_flush_dcache(void* data, uint32_t size);
+extern void system_flush_dcache(const void* data, uint32_t size);
 
 /**
  * @brief Invalidates data cache in a range

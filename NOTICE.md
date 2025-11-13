@@ -54,3 +54,12 @@ This project is licensed under the **MIT License**. See the `LICENSE` file for m
 - **License**: BSD-like (various)
 - **Path**: `third_party/picolibc/include/`
 - **Notes**: These header files are part of Picolibc, which uses various BSD-style licenses. For full license details, see `picolibc/COPYING.picolibc`. This is included in releases when picolibc is installed.
+
+---
+
+### 5. **FatFs ChaN**
+
+- **Source**: https://elm-chan.org/fsw/ff/
+- **License**: BSD-like
+- **Path**: `third_party/fatfs/`
+- **Notes**: A BSD-style licenses, full details in `third_party/fatfs/LICENSE.txt`
