@@ -4,6 +4,7 @@ add_library(
     STATIC
 
     sd.c
+    fs_syscall.c
 
     fatfs_port/diskio.c
 
