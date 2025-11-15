@@ -20,10 +20,6 @@
 
 #define DISK_DEV_SD 0
 
-PARTITION VolToPart[] = {
-    {0, 1},   // SD card maps physical drive to 1st partition
-};
-
 DSTATUS disk_status(BYTE pdrv) {
     switch(pdrv) {
         case DISK_DEV_SD:
