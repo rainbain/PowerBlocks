@@ -12,6 +12,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>
 
 #include "powerblocks/core/system/syscall.h"
 
@@ -81,6 +82,20 @@
  *  This is done by setting the MSB nibble.
  */
 #define SYSTEM_MEM_PHYSICAL(address) ((uint32_t)(address) & 0x1FFFFFFF)
+
+ /** @struct system_argv_t
+ *  @brief Command line arguments passed to us from launcher
+ */
+typedef struct {
+    int magic; // Supposed to be 0x5f617267, checked by system init
+    const char* command_line;
+    int command_line_length;
+    int argc;
+    char **argv;
+    char **end_argv;
+} system_argv_t;
+
+extern system_argv_t system_argv;
 
  /** @def PACKED
  *  @brief Pack a data structure.
@@ -330,5 +345,23 @@ extern void system_aligned_free(void* ptr);
  * so this all happens before the C program starts running.
  */
 extern void system_initialize();
+
+/**
+ * @brief Looks in the argv command line for a specific boot path.
+ *
+ * When mounting a file system, this can be used to change the directory
+ * into the one the program was launched from if the file system is the one
+ * its running from.
+ * 
+ * For example passing a device of "sd" into device, it will fill buffer
+ * with the `/apps/my_app/` path if the game was launched from the sd.
+ * If not it will return `/` into it.
+ * 
+ * @param device Boot device
+ * @param buffer Outputted path buffer
+ * @param length Length of path buffer.
+ * 
+ */
+extern void system_get_boot_path(const char* device, char* buffer, size_t length);
 
 #include <stdint.h>
