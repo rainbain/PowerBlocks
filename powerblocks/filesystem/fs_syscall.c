@@ -203,3 +203,14 @@ int isatty(int fd) {
     return 0;
 }
 
+int chdir(const char *path) {
+    FRESULT res;
+
+    res = f_chdir(path);
+    if (res == FR_OK) {
+        return 0;
+    } else {
+        errno = EIO;
+        return -1;
+    }
+}
