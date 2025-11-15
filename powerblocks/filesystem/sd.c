@@ -21,8 +21,8 @@
 static const char* TAG = "SD";
 
 #define SD_ERROR_LOGGING
-#define SD_INFO_LOGGING
-#define SD_DEBUG_LOGGING
+//#define SD_INFO_LOGGING
+//#define SD_DEBUG_LOGGING
 
 #ifdef SD_ERROR_LOGGING
 #define SD_LOG_ERROR(fmt, ...) LOG_ERROR(TAG, fmt, ##__VA_ARGS__)
@@ -81,6 +81,13 @@ DSTATUS sd_disk_status() {
         return STA_NOINIT;
     }
 
+    SD_LOG_DEBUG("SD Status:");
+    SD_LOG_DEBUG("  Card Inserted:     %s", (status & SDIO_DEVICE_STATUS_CARD_INSERTED) ? "True" : "False");
+    SD_LOG_DEBUG("  Card Not Inserted: %s", (status & SDIO_DEVICE_STATUS_NOT_INSERTED) ? "True" : "False");
+    SD_LOG_DEBUG("  Write Protected:   %s", (status & SDIO_DEVICE_STATUS_WRITE_PROTECT_SWITCH) ? "True" : "False");
+    SD_LOG_DEBUG("  SD Initialized:    %s", (status & SDIO_DEVICE_STATUS_SD_INITIALIZED) ? "True" : "False");
+    SD_LOG_DEBUG("  IS SDHC:           %s", (status & SDIO_DEVICE_STATUS_IS_SDHC) ? "True" : "False");
+
     // Save if this is a SDHC card, we need that
     sd_card_sdhc = (status & SDIO_DEVICE_STATUS_IS_SDHC) > 0;
 
@@ -111,6 +118,10 @@ DSTATUS sd_disk_initialize() {
     // Remove stuff bits and single out RCA
     sd_rca &= 0xFFFF0000;
 
+    // SEND_IF_COND, required for dolphin to go into a state where sd registers as ready.
+    uint32_t r7 = 0;
+    ret = sdio_send_cmd(SD_CMD8_SEND_IF_COND, SD_CMDTYPE_BCR, SD_RESP_R7, 0x1AA, NULL, 0, 0, NULL, 0);
+
     // Wait until the card is ready.
     uint32_t ocr;
     for(int i = 0; i < 100; i++) {
@@ -136,12 +147,6 @@ DSTATUS sd_disk_initialize() {
 
     // See if its sdhc and get status
     DSTATUS status = sd_disk_status();
-    SD_LOG_DEBUG("SD Status:");
-    SD_LOG_DEBUG("  Card Inserted:     %s", (status & SDIO_DEVICE_STATUS_CARD_INSERTED) ? "True" : "False");
-    SD_LOG_DEBUG("  Card Not Inserted: %s", (status & SDIO_DEVICE_STATUS_NOT_INSERTED) ? "True" : "False");
-    SD_LOG_DEBUG("  Write Protected:   %s", (status & SDIO_DEVICE_STATUS_WRITE_PROTECT_SWITCH) ? "True" : "False");
-    SD_LOG_DEBUG("  SD Initialized:    %s", (status & SDIO_DEVICE_STATUS_SD_INITIALIZED) ? "True" : "False");
-    SD_LOG_DEBUG("  IS SDHC:           %s", (status & SDIO_DEVICE_STATUS_IS_SDHC) ? "True" : "False");
 
     // Select the card
     ret = sdio_send_cmd(SD_CMD7_SELECT_CARD, SD_CMDTYPE_AC, SD_RESP_R1b, sd_rca, NULL, 0, 0, NULL, 0);
