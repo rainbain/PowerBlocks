@@ -20,6 +20,21 @@ Feel free to add them as they are discovered.
 3. Add Indirect Texturing
 4. Add Texture LODs
 
+## Wiimotes
+1. Add support for the missing extensions.
+2. Add support for motion plus.
+
+### Known Missing Extensions
+ - Classic Controller Pro
+ - Drawsome Graphics Tablet
+ - Guitar Hero Guitar
+ - Guitar Hero Drums
+ - DJ Hero Turntable
+ - Taiko no Tatsujin TaTaCon Drum controller
+ - UDraw Game Tablet
+ - Densha de GO! Shinkansen Controller
+ - Wii Balance Board
+
 ## FileSystem
 1. SD card mounting/unmounting may not be pretty. Ive not tried it
 2. Add the posix filesystem functions.
@@ -27,4 +42,4 @@ Feel free to add them as they are discovered.
 ## Bugs
 1. Fix rand() function.
 2. Fix framebuffer fill function. When drawing 5x5 red rects for example it fails up update UV values correctly and makes colors.
-3. Uninitialized memory? in wiimote example. The wiimote example sometimes just fails with a black screen. Seems to fix if you reboot the system, so its likely uninitialized memory
+3. Uninitialized memory in wiimote example? The wiimote example sometimes just fails with a black screen. Seems to fix if you reboot the system, so its likely uninitialized memory
