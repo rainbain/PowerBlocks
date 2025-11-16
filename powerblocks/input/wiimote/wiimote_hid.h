@@ -90,8 +90,6 @@ typedef struct {
     SemaphoreHandle_t internal_state_lock;
     wiimote_raw_t internal_state;
 
-    bool enable_extension_ready;
-
     StaticSemaphore_t semaphore_data[1];
 } wiimote_hid_t;
 
