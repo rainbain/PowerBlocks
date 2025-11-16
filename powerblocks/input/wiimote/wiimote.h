@@ -14,6 +14,8 @@
 #include "powerblocks/core/utils/math/vec3.h"
 #include "powerblocks/core/utils/math/vec2.h"
 
+#include "powerblocks/input/wiimote/wiimote_extension.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -25,7 +27,8 @@
 #define WIIMOTE_PRESENT_IR            (1<<2)
 #define WIIMOTE_PRESENT_IR_EXTENDED   (1<<3)
 #define WIIMOTE_PRESENT_IR_FULL       (1<<4)
-#define WIIMOTE_PRESENT_INTERLACED    (1<<5) // This signals the data was collected using interlaced input packets
+#define WIIMOTE_PRESENT_EXTENSION     (1<<5)
+#define WIIMOTE_PRESENT_INTERLACED    (1<<6) // This signals the data was collected using interlaced input packets
 
 #define WIIMOTE_BUTTONS_DPAD_LEFT  (1<<0)
 #define WIIMOTE_BUTTONS_DPAD_RIGHT (1<<1)
@@ -50,12 +53,7 @@ typedef struct {
     uint32_t present;
 
     // Include the "Core Buttons" of the wiimote. The ones on the remote itself
-    struct {
-        uint16_t state; // Current frame of data. What ones are true and false
-        uint16_t held; // Last frame of data. "Held" buttons
-        uint16_t down; // True for 1 poll when pushed down
-        uint16_t up; // True for 1 poll when up
-    } buttons;
+    wiimote_buttons buttons;
 
     // Accelerometer Data + rotation. Updated if accelerometer is enabled.
     struct {
@@ -91,6 +89,8 @@ typedef struct {
 
         int known_dots; // Dots seen up until loosing tracking.
     } cursor;
+
+    wiimote_extension_data_t extensions;
 } wiimote_t;
 
 extern wiimote_t WIIMOTES[WIIMOTE_MAX_REMOTES];

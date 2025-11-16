@@ -22,9 +22,11 @@
 
 #include "wiimote.h"
 #include "wiimote_sys.h"
+#include "wiimote_extension.h"
 #include "wiimote_log.h"
 
 #include "FreeRTOS.h"
+#include "timers.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -33,13 +35,20 @@
 #define WIIMOTE_HID_OUTPUT_REPORT 0xA2
 
 // Memory space 0x04, Registers
-#define WIIMOTE_MEMORY_REGISTER_IR        0x04B00030
-#define WIIMOTE_MEMORY_REGISTER_IR_BLOCK1 0x04B00000
-#define WIIMOTE_MEMORY_REGISTER_IR_BLOCK2 0x04B0001A
-#define WIIMOTE_MEMORY_REGISTER_IR_MODE   0x04B00033
+#define WIIMOTE_MEMORY_REGISTER_IR          0x04B00030
+#define WIIMOTE_MEMORY_REGISTER_IR_BLOCK1   0x04B00000
+#define WIIMOTE_MEMORY_REGISTER_IR_BLOCK2   0x04B0001A
+#define WIIMOTE_MEMORY_REGISTER_IR_MODE     0x04B00033
+#define WIIMOTE_MEMORY_EXTENSION_TYPE       0x04A400FA
+#define WIIMOTE_MEMORY_ENCRYPTION_DISABLE_A 0x04A400F0
+#define WIIMOTE_MEMORY_ENCRYPTION_DISABLE_B 0x04A400FB
+#define WIIMOTE_MEMORY_EXTENSION_PERCISION  0x04A400FE
 
 // Memory space 0x00, EEPROM
 #define WIIMOTE_MEMORY_EEPROM_CALIBRATION 0x00000016
+
+static int wiimote_write_memory(wiimote_hid_t* wiimote, uint32_t address, const uint8_t* data, size_t size);
+static int wiimote_hid_request_extension_type(wiimote_hid_t* wiimote);
 
 static void wiimote_handle_status_report(wiimote_hid_t* wiimote, const uint8_t* report, size_t length) {
     // Format:
@@ -63,8 +72,35 @@ static void wiimote_handle_status_report(wiimote_hid_t* wiimote, const uint8_t* 
     xSemaphoreGive(wiimote->internal_state_lock);
 
     // Reenable reporting.
+    // Since I have coded it to never request a report,
+    // If we get a unrequest report, it is required we reenable reporting.
+    uint8_t old_report_mode = wiimote->set_report_mode;
     wiimote->set_report_mode = 0; // We want it to update this, since its been disabled
-    wiimote_hid_set_report(wiimote, wiimote->set_report_mode, false);
+    wiimote_hid_set_report(wiimote, old_report_mode, false);
+
+    // Check for any extension, or lack there of
+    if(report[2] & WIIMOTE_FLAGS_EXTENSION_CONNECTED) {
+        WIIMOTE_LOG_INFO("Extension Connected, initializing it.");
+        // Disable encryption setup taken from wiibrew's extension initialization sequence
+        uint8_t t = 0x55;
+        wiimote_write_memory(wiimote, WIIMOTE_MEMORY_ENCRYPTION_DISABLE_A, &t, 1);
+
+        /// TODO: This seems like a bad delay (in the l2cap thread)
+        /// Could we find somewhere else to put it? It really helps
+        /// Make sure extensions connect correctly to have this delay. Its just weird
+        vTaskDelay(50 / portTICK_PERIOD_MS);
+
+        t = 0x00;
+        wiimote_write_memory(wiimote, WIIMOTE_MEMORY_ENCRYPTION_DISABLE_B, &t, 1);
+        
+        // Now request the extension type to finish the process
+        wiimote_hid_request_extension_type(wiimote);
+    } else {
+        xSemaphoreTake(wiimote->internal_state_lock, portMAX_DELAY);
+        wiimote_raw_t* state = &wiimote->internal_state;
+        state->ext_mapper = NULL;
+        xSemaphoreGive(wiimote->internal_state_lock);
+    }
 }
 
 static void wiimote_handle_data_report(wiimote_hid_t* wiimote, uint8_t report_type, const uint8_t* report, size_t length) {
@@ -118,6 +154,39 @@ static void wiimote_handle_calibration_data(wiimote_hid_t* wiimote, const uint8_
     WIIMOTE_LOG_DEBUG("  One G:  (%d, %d, %d)", wiimote->internal_state.calibration.accel_one[0], wiimote->internal_state.calibration.accel_one[1], wiimote->internal_state.calibration.accel_one[2]);
 }
 
+static const wiimote_extension_mapper_t* wiimote_get_mapper(const uint8_t* data, size_t length) {
+    if(length != 6) {
+        WIIMOTE_LOG_ERROR("Invalid length in extension type response. Length %s", length);
+        return NULL;
+    }
+
+    wiimote_extension_t type = wiimote_extension_get_type(data);
+    if(type == WIIMOTE_EXTENSION_NONE) // Failed to detect extension type, logged by get type
+        return NULL;
+    
+    const char* name = wiimote_extension_get_name(type);
+    const wiimote_extension_mapper_t* mapper = wiimote_extension_get_mapper(type);
+
+    if(mapper == NULL) {
+        WIIMOTE_LOG_INFO("Extension \"%s\" is unsupported.", name);
+    } else {
+        WIIMOTE_LOG_INFO("Adding extension \"%s\"", name);
+    }
+
+    return mapper;
+}
+
+static void wiimote_handle_extension_type(wiimote_hid_t* wiimote, const uint8_t* data, size_t length) {
+    // Up until this point, an extension was requested, we initialized it, then requested the extension type.
+    // Now we will want to detect the extension type and use it
+    const wiimote_extension_mapper_t* mapper = wiimote_get_mapper(data, length);
+
+    xSemaphoreTake(wiimote->internal_state_lock, portMAX_DELAY);
+    wiimote_raw_t* state = &wiimote->internal_state;
+    state->ext_mapper = mapper;
+    xSemaphoreGive(wiimote->internal_state_lock);
+}
+
 static void wiimote_handle_read_memory(wiimote_hid_t* wiimote, const uint8_t* report, size_t length) {
     // Format:
     // BB BB SE AA AA DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD
@@ -146,6 +215,9 @@ static void wiimote_handle_read_memory(wiimote_hid_t* wiimote, const uint8_t* re
     switch(address) {
         case (WIIMOTE_MEMORY_EEPROM_CALIBRATION & 0xFFFF):
             wiimote_handle_calibration_data(wiimote, data, size);
+            break;
+        case (WIIMOTE_MEMORY_EXTENSION_TYPE & 0xFFFF):
+            wiimote_handle_extension_type(wiimote, data, size);
             break;
         default:
             WIIMOTE_LOG_ERROR("Got read memory report for unknown address %04X", address);
@@ -210,19 +282,23 @@ static void wiimote_on_report_in(void* channel_v, void* wiimote_v) {
     }
 }
 
+// Request a status report
+static int wiimote_request_status(wiimote_hid_t* wiimote) {
+    uint8_t payload[3] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_STATUS, 0};
+
+    return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+}
+
 // Sets the 4 leds
-/// TODO: you better improve this
 static int wiimote_hid_set_leds(wiimote_hid_t* wiimote, uint8_t leds) {
     uint8_t payload[3] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_LEDS, leds};
 
     return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
 }
 
-// Request to read back calibration data through a memory read request.
-static int wiimote_hid_request_calibration_data(wiimote_hid_t* wiimote) {
-    uint32_t address = WIIMOTE_MEMORY_EEPROM_CALIBRATION;
-    uint16_t size = 8;
-    uint8_t payload[] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_READ_MEMORY,
+// Will request to read memory, then you must handle the request in the switch statement.
+static int wiimote_request_read_memory(wiimote_hid_t* wiimote, uint32_t address, size_t size) {
+     uint8_t payload[] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_READ_MEMORY,
         (address >> 24) & 0xFF, (address >> 16) & 0xFF, (address >> 8) & 0xFF, (address >> 0) & 0xFF,
         size >> 8, size & 0xFF}; // Request 8 bytes
     
@@ -244,6 +320,16 @@ static int wiimote_write_memory(wiimote_hid_t* wiimote, uint32_t address, const 
     memcpy(payload + 7, data, size);
 
     return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+}
+
+// Request to read back the extension type thats connected
+static int wiimote_hid_request_extension_type(wiimote_hid_t* wiimote) {
+    return wiimote_request_read_memory(wiimote, WIIMOTE_MEMORY_EXTENSION_TYPE, 6);
+}
+
+// Request to read back calibration data through a memory read request.
+static int wiimote_hid_request_calibration_data(wiimote_hid_t* wiimote) {
+    return wiimote_request_read_memory(wiimote, WIIMOTE_MEMORY_EEPROM_CALIBRATION, 8);
 }
 
 static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
@@ -272,7 +358,7 @@ static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
             return ret;
         
         // Short delay or else the mode is random
-        vTaskDelay(50 / portTICK_PERIOD_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
 
         // Pull sensitivity setting from system settings
         uint8_t selected_mode = wiimote_sys_config.ir_sensitivity;
@@ -301,7 +387,7 @@ static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
             return ret;
         
         // Short delay or else the mode is random
-        vTaskDelay(50 / portTICK_PERIOD_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
 
         // Now set mode for IR Mode register (threw the set report function)
         wiimote_hid_set_report(wiimote, wiimote->set_report_mode, true);
@@ -350,7 +436,6 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
     }
 
     // TODO: If these fail, close the L2CAP instance correctly
-
     // Open Control Channel
     // Used for commands (though I dont think it uses any)
     WIIMOTE_LOG_INFO("Opening Control Channel");
@@ -374,21 +459,12 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
     // Set up events
     l2cap_set_channel_receive_event(&wiimote->interrupt_channel, wiimote_on_report_in, wiimote);
 
-
     WIIMOTE_LOG_INFO("Configuring Wiimote");
 
-    uint8_t payload[3] = {WIIMOTE_HID_OUTPUT_REPORT, 0x15, 0x00};
+    // Set reporting
+    wiimote_hid_set_report(wiimote, WIIMOTE_REPORT_BUTTONS_ACCEL_IR10_EXT6, false);
 
-    ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
-    if(ret < 0)
-        return ret;
-
-    // Default reporting mode
-    wiimote_hid_set_report(wiimote, 0x30, false);
-    if(ret < 0) {
-        WIIMOTE_LOG_ERROR("Set report failed %d", ret);
-        return ret;
-    }
+    vTaskDelay(50 / portTICK_PERIOD_MS);
 
     // LEDs
     ret = wiimote_hid_set_leds(wiimote, 0x10 << (slot & 0b11));
@@ -403,6 +479,11 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
         WIIMOTE_LOG_ERROR("Request calibration data failed %d", ret);
         return ret;
     }
+
+    // Will also off connecting any extensions.
+    wiimote_request_status(wiimote);
+
+    vTaskDelay(500 / portTICK_PERIOD_MS);
 
     // Get the camera going
     wiimote_initialize_ir_camera(wiimote);

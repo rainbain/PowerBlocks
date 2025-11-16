@@ -4,6 +4,7 @@ add_library(
     STATIC
 
     wiimote/wiimote.c
+    wiimote/wiimote_extension.c
     wiimote/wiimote_hid.c
     wiimote/wiimote_sys.c
 )

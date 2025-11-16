@@ -14,6 +14,7 @@
 #include "powerblocks/core/bluetooth/hci.h"
 
 #include "powerblocks/input/wiimote/wiimote.h"
+#include "powerblocks/input/wiimote/wiimote_extension.h"
 
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -65,6 +66,8 @@ typedef struct {
         uint16_t accel_one[3];
     } calibration;
 
+    const wiimote_extension_mapper_t* ext_mapper;
+
     uint8_t report_type;
     uint8_t data_report[42]; // Max report size is 21, but interleaved allows for 2 to make 1
 } wiimote_raw_t;
@@ -86,6 +89,8 @@ typedef struct {
     // Internal state
     SemaphoreHandle_t internal_state_lock;
     wiimote_raw_t internal_state;
+
+    bool enable_extension_ready;
 
     StaticSemaphore_t semaphore_data[1];
 } wiimote_hid_t;

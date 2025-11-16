@@ -38,28 +38,28 @@ static const int wiimote_present_lookup_table[] = {
     WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_ACCELEROMETER,
 
     // WIIMOTE_REPORT_BUTTONS_EXT8
-    WIIMOTE_PRESENT_BUTTONS,
+    WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_EXTENSION,
 
     // WIIMOTE_REPORT_BUTTONS_ACCL_IR12
     WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_ACCELEROMETER | WIIMOTE_PRESENT_IR | WIIMOTE_PRESENT_IR_EXTENDED,
 
     // WIIMOTE_REPORT_BUTTONS_EXT19
-    WIIMOTE_PRESENT_BUTTONS,
+    WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_EXTENSION,
 
     // WIIMOTE_REPORT_BUTTONS_ACCL_EXT16
-    WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_ACCELEROMETER,
+    WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_ACCELEROMETER | WIIMOTE_PRESENT_EXTENSION,
 
     // WIIMOTE_REPORT_BUTTONS_IR10_EXT9
-    WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_IR,
+    WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_IR | WIIMOTE_PRESENT_EXTENSION,
 
     // WIIMOTE_REPORT_BUTTONS_ACCEL_IR10_EXT6
-    WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_ACCELEROMETER | WIIMOTE_PRESENT_IR,
+    WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_ACCELEROMETER | WIIMOTE_PRESENT_IR | WIIMOTE_PRESENT_EXTENSION,
 
     // Unused
     0, 0, 0, 0, 0,
 
     // WIIMOTE_REPORT_EXT21
-    0,
+    WIIMOTE_PRESENT_EXTENSION,
 
     // WIIMOTE_REPORT_INTERLEAVED_A
     WIIMOTE_PRESENT_BUTTONS | WIIMOTE_PRESENT_ACCELEROMETER | WIIMOTE_PRESENT_INTERLACED | WIIMOTE_PRESENT_IR | WIIMOTE_PRESENT_IR_FULL,
@@ -75,13 +75,8 @@ static const uint8_t wiimote_present_preferred_table[] =  {
 
 static void wiimote_update_buttons(const wiimote_raw_t* raw_data, wiimote_t* output) {
     uint16_t new_state = (uint16_t)raw_data->data_report[0] | ((uint16_t)raw_data->data_report[1] << 8);
-    uint16_t old_state = output->buttons.state;
 
-    // Update state changes
-    output->buttons.state = new_state;
-    output->buttons.held = old_state;
-    output->buttons.down = (~old_state) & new_state;
-    output->buttons.up = old_state & (~old_state);
+    wiimote_set_button_helper(&output->buttons, new_state);
 }
 
 static void wiimote_update_accelerometer(const wiimote_raw_t* raw_data, wiimote_t* output) {
@@ -370,6 +365,7 @@ void wiimotes_initialize() {
     memset(WIIMOTES, 0, sizeof(WIIMOTES));
 
     // Sensor Bar On
+    gpio_set_direction(GPIO_SENSOR_BAR, true);
     gpio_write(GPIO_SENSOR_BAR, true);
 
     // Load settings
@@ -414,6 +410,38 @@ static void wiimote_update(const wiimote_raw_t* raw_data, wiimote_t* output) {
     if(output->present & WIIMOTE_PRESENT_IR) {
         wiimote_update_ir(raw_data, output);
         wiimote_update_cursor(output);
+    }
+
+    if(output->present & WIIMOTE_PRESENT_EXTENSION) {
+        // How offset into the data is the extension data.
+        int start = 0;
+        if(output->present & WIIMOTE_PRESENT_BUTTONS) start += 2;
+        if(output->present & WIIMOTE_PRESENT_ACCELEROMETER) start += 3;
+        if(output->present & WIIMOTE_PRESENT_IR) start += 10;
+
+        // Number of extension bytes
+        size_t extension_bytes = 0;
+        switch(raw_data->report_type) {
+            case WIIMOTE_REPORT_BUTTONS_EXT8:
+                extension_bytes = 8;
+                break;
+            case WIIMOTE_REPORT_BUTTONS_EXT19:
+                extension_bytes = 19;
+                break;
+            case WIIMOTE_REPORT_BUTTONS_ACCL_EXT16:
+                extension_bytes = 16;
+                break;
+            case WIIMOTE_REPORT_BUTTONS_IR10_EXT9:
+                extension_bytes = 10;
+                break;
+            case WIIMOTE_REPORT_BUTTONS_ACCEL_IR10_EXT6:
+                extension_bytes = 6;
+                break;
+            case WIIMOTE_REPORT_EXT21:
+                extension_bytes = 21;
+                break;
+        }
+        wiimote_extension_phrase_data(&output->extensions, raw_data->ext_mapper, raw_data->data_report + start, extension_bytes);
     }
 }
 
