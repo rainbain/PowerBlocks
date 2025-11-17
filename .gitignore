@@ -4,6 +4,9 @@ toolchain/lib
 picolibc/include
 picolibc/lib
 
+# Ignore build folder
+build/
+
 # Ignore Example Program build folders
 examples/HelloWorld/build
 examples/Teapot/build
