@@ -1,0 +1,22 @@
+/* Disable default */
+#projectlogo img {
+    visibility: hidden;
+}
+
+/* Now choose logo based on browser dark/light mode preference. */
+
+@media (prefers-color-scheme: light) {
+    #projectlogo {
+        background-image: url("powerblocks_logo_light.svg");
+        background-size: contain;
+        background-repeat: no-repeat;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    #projectlogo {
+        background-image: url("powerblocks_logo_dark.svg");
+        background-size: contain;
+        background-repeat: no-repeat;
+    }
+}
