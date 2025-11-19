@@ -67,7 +67,7 @@ PROJECT_LOGO           = docs/doxygen/powerblocks_logo_light.svg
 # when the HTML document is shown. Doxygen will copy the logo to the output
 # directory.
 
-PROJECT_ICON           =
+PROJECT_ICON           = docs/doxygen/powerblocks_logo_icon.png
 
 # The OUTPUT_DIRECTORY tag is used to specify the (relative or absolute) path
 # into which the generated documentation will be written. If a relative path is
