@@ -3,7 +3,7 @@ add_library(
 
     STATIC
 
-    system/start.s
+    system/start.S
     system/exceptions_asm.s
     system/system_asm.s
     system/libcio.c
