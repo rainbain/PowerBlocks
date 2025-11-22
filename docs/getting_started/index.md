@@ -42,9 +42,6 @@ The example project created from the installation option of choice generates `He
 
 This can be launched on both emulator and Wii hardware for testing.
 
-\note
-Currently, the Homebrew Channel is required to launch applications on emulator. PowerBlocks currently does not fully initialize the hardware and needs a launcher in front of it to do this.
-
 ## Homebrew Channel
 You will need to install the Homebrew Channel to launch it from [here](https://wii.hacks.guide/hbc).
 
@@ -87,6 +84,8 @@ This is an optional **128x48** PNG icon of your program to be displayed from the
 
 ## Launching
 Now you can run the executable by entering the Homebrew Channel and launching it.
+
+You can also launch it directly from Dolphin by opening the ELF with Dolphin.
 
 For the HelloWorld example you should see a blank screen with the current text:
 ```
