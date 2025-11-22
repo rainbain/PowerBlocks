@@ -266,6 +266,11 @@ final_init:
     bl system_initialize
 trap:
     b trap
+
+	# BUGFIX: So apparently Dolphin will not detect it as a wii executable when running it directly
+	# unless it sees code touching HID4. So you need to fake it to make sure it thinks its a wii
+	# executable.
+	.long 0x7c13fba6
 .section .note.GNU-stack
 _note:
 
