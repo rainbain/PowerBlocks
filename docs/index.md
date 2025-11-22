@@ -5,6 +5,8 @@ It covers installation, usage, and reference material for both the SDK and the W
 
 [PowerBlocks Github Repo](https://github.com/rainbain/PowerBlocks)
 
+\note This documentation is for the next unreleased version of PowerBlocks. Please be aware that many of the features will only be available if you build PowerBlocks from source.
+
 ## Introduction
 To begin, visit the \ref getting_started_index "Getting Started" page.  
 It walks you through installing the SDK and building your first executable for the Wii.
