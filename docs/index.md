@@ -3,6 +3,8 @@ Welcome to the PowerBlocks SDK documentation.
 This site provides information for developing Wii software using the PowerBlocks SDK.  
 It covers installation, usage, and reference material for both the SDK and the Wii hardware.
 
+[PowerBlocks Github Repo](https://github.com/rainbain/PowerBlocks)
+
 ## Introduction
 To begin, visit the \ref getting_started_index "Getting Started" page.  
 It walks you through installing the SDK and building your first executable for the Wii.
