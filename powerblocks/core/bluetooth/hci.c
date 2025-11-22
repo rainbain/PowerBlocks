@@ -162,6 +162,7 @@ typedef struct {
 #define HCI_OPCODE_REMOTE_NAME_REQUEST            0x0419
 #define HCI_OPCODE_SET_EVENT_MASK                 0x0C01
 #define HCI_OPCODE_RESET                          0x0C03
+#define HCI_OPCODE_WRITE_SCAN_ENABLE              0x0C1A
 
 static const char* TAG = "HCI";
 
@@ -680,6 +681,18 @@ int hci_reset() {
     xSemaphoreTake(hci_state.lock, portMAX_DELAY);
     int ret = hci_reset_no_lock();
     xSemaphoreGive(hci_state.lock);
+    return ret;
+}
+
+int hci_write_scan_enable(bool enable_inquiry_scan, bool enable_page_scan) {
+    uint8_t mode = 0;
+    if(enable_inquiry_scan) mode |= 0x01;
+    if(enable_page_scan) mode |= 0x02;
+
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
+    int ret = hci_send_command(HCI_OPCODE_WRITE_SCAN_ENABLE, &mode, sizeof(mode), NULL, 0, NULL);
+    xSemaphoreGive(hci_state.lock);
+
     return ret;
 }
 

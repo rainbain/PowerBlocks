@@ -127,6 +127,22 @@ extern void hci_close();
 extern int hci_reset();
 
 /**
+ * @brief Writes the HCI's page scan register.
+ * 
+ * enable_inquiry_scan will make it so HCI responds to other device's
+ * bluetooth inquiry. Making this HCI appear as a connectable device.
+ * 
+ * enable_page_scan will make it so that paired devices may attempt to
+ * reconnect to HCI. This will take the form of a connection request event.
+ * 
+ * @param enable_inquiry_scan Appear in device discoveries.
+ * @param enable_page_scan Generate connection request events.
+ * 
+ * @return Negative if Error
+ */
+extern int hci_write_scan_enable(bool enable_inquiry_scan, bool enable_page_scan);
+
+/**
  * @brief Begins looking for bluetooth devices.
  * 
  * Will begin looking for bluetooth devices.
