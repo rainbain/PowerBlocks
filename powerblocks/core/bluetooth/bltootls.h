@@ -30,9 +30,19 @@ typedef struct {
     // Return true if the device applys to this driver
     bool (*filter_device)(const hci_discovered_device_info_t* device, const char* device_name);
 
+    // Covered when a device appears to be paired
+    // Return true if you trust this device and we have paired to it before.
+    bool (*filter_paired_device)(const hci_discovered_device_info_t* device);
+
     // Called once the filter passes, will attempt to add the device
     // Return a non-null reference to the device if successful
-    void* (*initialize_device)(const hci_discovered_device_info_t* device);
+    // This is called for discovered devices. Pair/reconnecting devices get the initialize_paired_device
+    void* (*initialize_new_device)(const hci_discovered_device_info_t* device);
+
+    // Called once the filter passes, will attempt to add the device
+    // Return a non-null reference to the device if successful
+    // This is called for already paired devices, and who may want their connection request accepted
+    void* (*initialize_paired_device)(const hci_discovered_device_info_t* device);
 
     // Called when the device is disconnected. Free up the driver
     void (*free_device)(void* instance);
@@ -105,7 +115,7 @@ extern int bltools_load_driver(const bluetooth_driver_t* driver, const hci_disco
 extern int bltools_load_compatable_driver(const hci_discovered_device_info_t* device, const char* device_name);
 
 /**
- * @brief Will begin a discovery session and automatically connexts.
+ * @brief Will begin a discovery session.
  *
  * Will begin searching for discoverable devices.
  * 
@@ -115,10 +125,9 @@ extern int bltools_load_compatable_driver(const hci_discovered_device_info_t* de
  * Even if HCI ends the discovery session, it will attempt to go on for the set
  * duration.
  * 
- * WARNING: This creates a thread, it will destroy itself once discovery is done.
- * 
- * @param duration Duration in FreeRTOS ticks for discovery to go on for. Max ticks for forever.
- * 
+ * @param lap Access code for devices. Usually HCI_INQUIRY_MODE_GENERAL_ACCESS
+ * @param duration Duration in FreeRTOS ticks for discovery to go on for. 1.28 seconds to 61.44 seconds. Will be clamped.
+ * @param responses How many responses from discoverable devices must be found before responding. 0 for infinite.
  * @returns Negative if error.
  */
-extern int bltools_begin_automatic_discovery(TickType_t duration);
+extern int bltools_begin_discovery(uint32_t lap, TickType_t duration, uint8_t responses);

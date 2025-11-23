@@ -93,12 +93,12 @@ void wiimote_sys_phrase_settings() {
     WIIMOTE_LOG_DEBUG("  Registered Wiimotes (%d):", wiimote_sys_config.wiimotes.count);
     for(int i = 0; i < wiimote_sys_config.wiimotes.count; i++) {
         WIIMOTE_LOG_DEBUG("    %02X:%02X:%02X:%02X:%02X:%02X %s",
-        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[0],
-        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[1],
-        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[2],
-        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[3],
-        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[4],
         wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[5],
+        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[4],
+        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[3],
+        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[2],
+        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[1],
+        wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[0],
         wiimote_sys_config.wiimotes.registered_entrys[i].name);
     }
     return;
@@ -108,16 +108,27 @@ ERROR:
     memset(&wiimote_sys_config, 0, sizeof(wiimote_sys_config));
 }
 
-void wiimote_connect_registered() {
-    hci_discovered_device_info_t info;
-    info.page_scan_repetition_mode = 0x02; // How often to scan, default "safe" value
-    info.class_of_device = 0x2504; // Taken from my wiimote, hopefully this works for all wiimotes?
-    info.clock_offset = 0; // Unknow - HCI find one for us
-
-    for(int i = 0; i < wiimote_sys_config.wiimotes.count; i++) {
-        for(int x = 0; x < 6; x++) {
-            info.address[x] = wiimote_sys_config.wiimotes.registered_entrys[i].mac_address[5-x];
-        }
-        bltools_load_compatable_driver(&info, wiimote_sys_config.wiimotes.registered_entrys[i].name);
+// Since mac addresses are reversed, this accounts for that
+static bool compare_mac_address(const uint8_t* a, const uint8_t* b) {
+    for(int i = 0; i < 6; i++) {
+        if(a[i] != b[5-i])
+            return false;
     }
+    return true;
+}
+
+bool wiimote_is_paired_guest(const uint8_t* mac_address) {
+    for(int i = 0; i < wiimote_sys_config.guest_wiimotes.count; i++) {
+        if(compare_mac_address(wiimote_sys_config.guest_wiimotes.entrys[i].mac_address, mac_address))
+            return true;
+    }
+    return false;
+}
+
+bool wiimote_is_paired_registered(const uint8_t* mac_address) {
+    for(int i = 0; i < wiimote_sys_config.wiimotes.count; i++) {
+        if(compare_mac_address(wiimote_sys_config.wiimotes.registered_entrys[i].mac_address, mac_address))
+            return true;
+    }
+    return false;
 }

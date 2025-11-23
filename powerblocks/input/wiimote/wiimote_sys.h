@@ -18,6 +18,7 @@
 #include "powerblocks/core/system/system.h"
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // Data structure describing the system config of wiimotes.
 // Changes to these WILL NOT be written back and reflected on the NAND as of currently for safety.
@@ -62,5 +63,8 @@ extern wiimote_sys_config_t wiimote_sys_config;
 // If this fails, config will load to defaults
 extern void wiimote_sys_phrase_settings();
 
-// Attempt adding registered wiimotes
-extern void wiimote_connect_registered();
+// See if this wiimote has been connected before as a guest (1+2 combo)
+extern bool wiimote_is_paired_guest(const uint8_t* mac_address);
+
+// See if this wiimote has been paired before.
+extern bool wiimote_is_paired_registered(const uint8_t* mac_address);

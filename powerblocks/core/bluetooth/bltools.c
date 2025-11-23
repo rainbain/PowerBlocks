@@ -56,33 +56,25 @@ static const char* TAG = "BLTOOLS";
 
 typedef struct {
     uint8_t message;
+    hci_discovered_device_info_t info;
 } bltools_discovery_task_queue_item_t;
 
 typedef struct {
     TaskHandle_t task;
     QueueHandle_t task_queue;
-
-    TickType_t remaining_duration;
-
-    // Discovery time tracking
-    TickType_t discovery_start;
-
-    // Currently discovered device for processing
-    bool device_found;
-    hci_discovered_device_info_t discovered_device;
     
     // Static Data
     bltools_discovery_task_queue_item_t queue_storage_buffer[BLTOOLS_DISCOVERY_TASK_QUEUE_SIZE];
     StaticQueue_t queue_buffer;
     StaticTask_t task_data;
     StackType_t task_stack[BLTOOLS_TASK_STACK_SIZE];
-} bltools_discovery_task_t;
+} bltools_worker_task_t;
 
 static bluetooth_driver_t* bltools_registered_drivers;
 static size_t bltools_registered_driver_count;
 static bluetooth_driver_instance_t* bltools_instanced_drivers;
 static size_t bltools_instanced_driver_count;
-static bltools_discovery_task_t* bltools_discovery_instance;
+static bltools_worker_task_t* bltools_worker_instance;
 
 static void bltools_discovery_task(void* instance_v);
 
@@ -106,13 +98,60 @@ static void bltools_push_driver(bluetooth_driver_instance_t* driver) {
     memcpy(slot, driver, sizeof(bluetooth_driver_instance_t));
 }
 
+
+#define DISCOVERY_TASK_QUEUE_DISCOVERED_DEVICE  1
+#define DISCOVERY_TASK_QUEUE_CONNECTION_REQUEST 2
+
+static void bltools_send_queue(bltools_worker_task_t *inst, uint8_t message, const hci_discovered_device_info_t* info) {
+    bltools_discovery_task_queue_item_t item;
+
+    item.message = message;
+    if(info != NULL) {
+        memcpy(&item.info, info, sizeof(item.info));
+    } else {
+        memset(&item.info, 0, sizeof(item.info));
+    }
+
+    if(xQueueSend(inst->task_queue, &item, 0) != pdPASS) {
+        BLTOOLS_LOG_ERROR("Task queue full! Dropping message %d", message);
+    }
+}
+
+static void bltools_hci_discovered_callback(void* user_data, const hci_discovered_device_info_t* device) {
+    bltools_worker_task_t* inst = (bltools_worker_task_t*)user_data;
+    bltools_send_queue(inst, DISCOVERY_TASK_QUEUE_DISCOVERED_DEVICE, device);
+}
+
+static void bltools_hci_connection_request_callback(void* user_data, const hci_discovered_device_info_t* device) {
+    bltools_worker_task_t* inst = (bltools_worker_task_t*)user_data;
+    bltools_send_queue(inst, DISCOVERY_TASK_QUEUE_CONNECTION_REQUEST, device);
+}
+
+static int bltools_start_worker() {
+    bltools_worker_instance = malloc(sizeof(*bltools_worker_instance));
+
+    if(bltools_worker_instance == NULL) {
+        return BLERROR_OUT_OF_MEMORY;
+    }
+
+    memset(bltools_worker_instance, 0, sizeof(*bltools_worker_instance));
+
+    bltools_worker_instance->task_queue = xQueueCreateStatic(BLTOOLS_DISCOVERY_TASK_QUEUE_SIZE, sizeof(bltools_discovery_task_queue_item_t),
+        (uint8_t*)bltools_worker_instance->queue_storage_buffer, &bltools_worker_instance->queue_buffer);
+    
+    bltools_worker_instance->task = xTaskCreateStatic(bltools_discovery_task, TAG, sizeof(bltools_worker_instance->task_stack),
+                      bltools_worker_instance, BLTOOLS_TASK_PRIORITY, bltools_worker_instance->task_stack, &bltools_worker_instance->task_data);
+
+    return 0;
+}
+
 int bltools_initialize() {
     // State
     bltools_registered_drivers = NULL;
     bltools_registered_driver_count = 0;
     bltools_instanced_drivers = NULL;
     bltools_instanced_driver_count = 0;
-    bltools_discovery_instance = NULL;
+    bltools_worker_instance = NULL;
 
     int ret;
 
@@ -123,6 +162,12 @@ int bltools_initialize() {
     ret = l2cap_initialize();
     if(ret < 0)
         return ret;
+    
+    // Start worker
+    bltools_start_worker();
+
+    // Route hci connection request here
+    hci_set_connection_request_handler(bltools_hci_connection_request_callback, bltools_worker_instance);
     
     return 0;
 }
@@ -164,8 +209,13 @@ bluetooth_driver_t* bltools_find_compatable_driver(const hci_discovered_device_i
         if(driver->driver_id == BLUETOOTH_DRIVER_ID_INVALID)
             continue;
         
-        if(driver->filter_device(device, device_name))
-            return driver;
+        if(device->connection_request) {
+            if(driver->filter_paired_device(device))
+                return driver;
+        } else {
+            if(driver->filter_device(device, device_name))
+                return driver;
+        }
     }
     return NULL;
 }
@@ -173,7 +223,11 @@ bluetooth_driver_t* bltools_find_compatable_driver(const hci_discovered_device_i
 int bltools_load_driver(const bluetooth_driver_t* driver, const hci_discovered_device_info_t* device) {
     bluetooth_driver_instance_t instance;
     instance.driver_id = driver->driver_id;
-    instance.instance = driver->initialize_device(device);
+    if(device->connection_request) {
+        instance.instance = driver->initialize_paired_device(device);
+    } else {
+        instance.instance = driver->initialize_new_device(device);
+    }
 
     // Do not display as an error, its normal
     // to try and connect to a device and have that fail
@@ -195,79 +249,19 @@ int bltools_load_compatable_driver(const hci_discovered_device_info_t* device, c
     return bltools_load_driver(driver, device);
 }
 
-int bltools_begin_automatic_discovery(TickType_t duration) {
-    if(bltools_discovery_instance != NULL) {
-        BLTOOLS_LOG_ERROR("Can not begin discovery, discovery already started.");
-        return BLERROR_RUNTIME;
-    }
-
-    bltools_discovery_instance = malloc(sizeof(*bltools_discovery_instance));
-
-    if(bltools_discovery_instance == NULL) {
-        return BLERROR_OUT_OF_MEMORY;
-    }
-
-    memset(bltools_discovery_instance, 0, sizeof(*bltools_discovery_instance));
-    bltools_discovery_instance->remaining_duration = duration;
-
-    bltools_discovery_instance->task_queue = xQueueCreateStatic(BLTOOLS_DISCOVERY_TASK_QUEUE_SIZE, sizeof(bltools_discovery_task_queue_item_t),
-        (uint8_t*)bltools_discovery_instance->queue_storage_buffer, &bltools_discovery_instance->queue_buffer);
-
-    bltools_discovery_instance->task = xTaskCreateStatic(bltools_discovery_task, TAG, sizeof(bltools_discovery_instance->task_stack),
-                      bltools_discovery_instance, BLTOOLS_TASK_PRIORITY, bltools_discovery_instance->task_stack, &bltools_discovery_instance->task_data);
+int bltools_begin_discovery(uint32_t lap, TickType_t duration, uint8_t responses) {
+    // Clamp duration
+    if(duration < (1280 / portTICK_RATE_MS))
+        duration = 1280 / portTICK_RATE_MS;
+    if(duration > (61440 / portTICK_RATE_MS))
+        duration = 61440 / portTICK_RATE_MS;
     
-    return 0;
+    uint8_t length = duration / (1280 / portTICK_RATE_MS);
+
+    return hci_begin_discovery(lap, length, responses, bltools_hci_discovered_callback, NULL, bltools_worker_instance);
 }
 
-#define DISCOVERY_TASK_QUEUE_START_DISCOVERY   0
-#define DISCOVERY_TASK_QUEUE_DISCOVERY_END     2
-#define DISCOVERY_TASK_QUEUE_DISCOVERY_ERROR   3
-
-static void bltools_send_queue(bltools_discovery_task_t *inst, uint8_t message) {
-    bltools_discovery_task_queue_item_t item;
-
-    item.message = message;
-
-    if(xQueueSend(inst->task_queue, &item, 0) != pdPASS) {
-        BLTOOLS_LOG_ERROR("Task queue full! Dropping");
-    }
-}
-
-static void hci_discovered_callback(void* user_data, const hci_discovered_device_info_t* device) {
-    bltools_discovery_task_t* inst = (bltools_discovery_task_t*)user_data;
-
-    BLTOOLS_LOG_DEBUG("Adding discovered device.");
-    if(inst->device_found) {
-        BLTOOLS_LOG_ERROR("Can't add discovered device. One already found!?!?");
-        return;
-    }
-
-    memcpy(&inst->discovered_device, device, sizeof(inst->discovered_device));
-    inst->device_found = true;
-}
-
-static void hci_discovery_complete_callback(void* user_data, uint8_t error) {
-    bltools_discovery_task_t* inst = (bltools_discovery_task_t*)user_data;
-
-    BLTOOLS_LOG_DEBUG("Discovery Ended: %02x", error);
-
-    if(error != 0) {
-        bltools_send_queue(inst, DISCOVERY_TASK_QUEUE_DISCOVERY_ERROR);
-    } else {
-        bltools_send_queue(inst, DISCOVERY_TASK_QUEUE_DISCOVERY_END);
-    }}
-
-static void bltools_task_start_discovery(bltools_discovery_task_t* inst) {
-    inst->discovery_start = xTaskGetTickCount();
-
-    BLTOOLS_LOG_DEBUG("Starting HCI Discovery");
-
-    int ret;
-    ret = hci_begin_discovery(HCI_INQUIRY_MODE_GENERAL_ACCESS, 1, 1,
-    hci_discovered_callback, hci_discovery_complete_callback, inst);
-}
-
-static void bltools_task_discovered_device(bltools_discovery_task_t* inst, const hci_discovered_device_info_t* discovery) {
+static void bltools_task_discovered_device(bltools_worker_task_t* inst, const hci_discovered_device_info_t* discovery) {
     uint8_t name[HCI_MAX_NAME_REQUEST_LENGTH];
 
     int ret = hci_get_remote_name(discovery, name);
@@ -277,34 +271,14 @@ static void bltools_task_discovered_device(bltools_discovery_task_t* inst, const
     bltools_load_compatable_driver(discovery, (const char*)name);
 }
 
-static void bltools_task_restart_discovery(bltools_discovery_task_t* inst) {
-    // Wait a half second before restarting
-    vTaskDelay(500 / portTICK_PERIOD_MS);
-
-    // Update remaining time
-    TickType_t duration = xTaskGetTickCount() - inst->discovery_start;
-
-    // Update remaining
-    inst->remaining_duration = inst->remaining_duration > duration ? inst->remaining_duration - duration : 0;
-
-    // Exit if theres no more than a second left.
-    if(inst->remaining_duration <= (1000 / portTICK_PERIOD_MS)) {
-        inst->remaining_duration = 0;
-        return;
-    }
-
-    bltools_task_start_discovery(inst);
+static void bltools_task_paired_device(bltools_worker_task_t* inst, const hci_discovered_device_info_t* discovery) {
+    bltools_load_compatable_driver(discovery, NULL);
 }
 
 static void bltools_discovery_task(void* instance_v) {
-    bltools_discovery_task_t* inst = (bltools_discovery_task_t*)instance_v;
-
-    inst->device_found = false;
+    bltools_worker_task_t* inst = (bltools_worker_task_t*)instance_v;
 
     bltools_discovery_task_queue_item_t item;
-
-    // Initial command to start discovery
-    bltools_send_queue(inst, DISCOVERY_TASK_QUEUE_START_DISCOVERY);
 
     while(true) {
         xQueueReceive(inst->task_queue, &item, portMAX_DELAY);
@@ -312,26 +286,11 @@ static void bltools_discovery_task(void* instance_v) {
         BLTOOLS_LOG_DEBUG("Processing event: %d", item.message);
 
         switch(item.message) {
-            case DISCOVERY_TASK_QUEUE_START_DISCOVERY:
-                bltools_task_start_discovery(inst);
+            case DISCOVERY_TASK_QUEUE_DISCOVERED_DEVICE:
+                bltools_task_discovered_device(inst, &item.info);
                 break;
-            case DISCOVERY_TASK_QUEUE_DISCOVERY_ERROR:
-                BLTOOLS_LOG_ERROR("Discovery error, Restarting Discovery.");
-                // No break, keep going
-
-            case DISCOVERY_TASK_QUEUE_DISCOVERY_END:
-                // Wait before continuing.
-                // Seems HCI likes to randomly give out on us if we follow it up too quickly.
-                // Could be that theres still a discovery being reported?
-                vTaskDelay(100 / portTICK_RATE_MS);
-
-                // Handle any discovered devices
-                if(inst->device_found) {
-                    bltools_task_discovered_device(inst, &inst->discovered_device);
-                    inst->device_found = false;
-                }
-
-                bltools_task_restart_discovery(inst);
+            case DISCOVERY_TASK_QUEUE_CONNECTION_REQUEST:
+                bltools_task_paired_device(inst, &item.info);
                 break;
             default:
                 BLTOOLS_LOG_ERROR("Unknown discovery queue message: %d", item.message);

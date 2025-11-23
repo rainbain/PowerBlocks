@@ -382,14 +382,17 @@ void wiimotes_initialize() {
     bluetooth_driver_t driver = {
         .driver_id = BLUETOOTH_DRIVER_ID_WIIMOTE,
         .filter_device = wiimote_hid_driver_filter,
-        .initialize_device = wiimote_hid_driver_initialize,
+        .filter_paired_device = wiimote_hid_driver_filter_paired,
+        .initialize_new_device = wiimote_hid_driver_initialize_new,
+        .initialize_paired_device = wiimote_hid_driver_initialize_paired,
         .free_device = wiimote_hid_driver_free_device
     };
 
     bltools_register_driver(driver);
 
-    // Connect wiimotes that have been connected in the past
-    //wiimote_connect_registered();
+    // Make it so that HCI will send us connection request
+    // So that wiimotes can connect.
+    hci_write_scan_enable(false, true);
 }
 
 static void wiimote_update(const wiimote_raw_t* raw_data, wiimote_t* output) {

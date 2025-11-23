@@ -402,7 +402,7 @@ static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
     return 0;
 }
 
-int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_info_t* discovery, int slot) {
+static int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_info_t* discovery, int slot, uint16_t handle) {
     // Clear out data
     memset(wiimote, 0, sizeof(*wiimote));
 
@@ -417,16 +417,8 @@ int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_i
     // Setup
     wiimote->slot = slot;
     wiimote->internal_state_lock = xSemaphoreCreateMutexStatic(&wiimote->semaphore_data[0]);
-
-    // Ask HCI for a handle to this device
-    uint16_t handle;
-    int ret = hci_create_connection(discovery, &handle);
-    if(ret < 0) {
-        // This is treated as a "info".
-        // Its fine for us to attempt reconnection to devices and fail.
-        WIIMOTE_LOG_INFO("Failed to make HCI connection! %d", ret);
-        return ret;
-    }
+    
+    int ret;
 
     // Open L2CAP Connection
     ret = l2cap_open_device(&wiimote->device, handle, discovery->address);
@@ -580,8 +572,25 @@ bool wiimote_hid_driver_filter(const hci_discovered_device_info_t* device, const
     return false;
 }
 
-// Called to initiate a driver
-void* wiimote_hid_driver_initialize(const hci_discovered_device_info_t* device) {
+bool wiimote_hid_driver_filter_paired(const hci_discovered_device_info_t* device) {
+    // So is its MAC address recorded in the wii's paired wiimotes?
+    if(wiimote_is_paired_registered(device->address)) {
+        WIIMOTE_LOG_INFO("Found registered paired wiimote reconnecting.");
+        return true;
+    }
+
+    if(wiimote_is_paired_guest(device->address)) {
+        WIIMOTE_LOG_INFO("Found guest wiimote reconnecting.");
+        return true;
+    }
+
+    const uint8_t* mac = device->address;
+    WIIMOTE_LOG_ERROR("WiiMote reconnecting to \"paired\" Wii despite not being in the registry. %02X:%02X:%02X:%02X:%02X:%02X",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    return false;
+}
+
+void* wiimote_hid_driver_initialize_new(const hci_discovered_device_info_t* device) {
     // Find a slot, make sure we have that
     int slot = wiimote_find_empty_slot();
     if(slot < 0)
@@ -590,9 +599,55 @@ void* wiimote_hid_driver_initialize(const hci_discovered_device_info_t* device) 
     wiimote_hid_t* driver = malloc(sizeof(*driver));
     if(driver == NULL)
         return NULL;
+
+    // Create Connection
+    uint16_t handle;
+    int ret = hci_create_connection(device, &handle);
+    if(ret < 0) {
+        // This is treated as a "info".
+        // Its fine for us to attempt reconnection to devices and fail.
+        WIIMOTE_LOG_INFO("Failed to make HCI connection! %d", ret);
+        return NULL;
+    }
     
-    int ret;
-    ret = wiimote_hid_initialize(driver, device, slot);
+    ret = wiimote_hid_initialize(driver, device, slot, handle);
+    if(ret < 0) {
+        free(driver);
+        return NULL;
+    }
+
+    WIIMOTES[slot].driver = driver;
+
+    return driver;
+}
+
+void* wiimote_hid_driver_initialize_paired(const hci_discovered_device_info_t* device) {
+    // Find a slot, make sure we have that
+    int slot = wiimote_find_empty_slot();
+    if(slot < 0) {
+        // Reject connection
+        hci_reject_connection(device, HCI_REJECT_REASON_LIMITED_RESOURCES);
+        return NULL;
+    }
+    
+    wiimote_hid_t* driver = malloc(sizeof(*driver));
+    if(driver == NULL) {
+        // Reject connection
+        hci_reject_connection(device, HCI_REJECT_REASON_LIMITED_RESOURCES);
+        return NULL;
+    }
+
+    // Create Connection
+    uint16_t handle;
+    int ret = hci_accept_connection(device, true, &handle);
+    if(ret < 0) {
+        // This is treated as a "info".
+        // Its fine for us to attempt reconnection to devices and fail.
+        WIIMOTE_LOG_INFO("Failed to make HCI connection! %d", ret);
+        return NULL;
+    }
+    
+    ret = wiimote_hid_initialize(driver, device, slot, handle);
     if(ret < 0) {
         free(driver);
         return NULL;

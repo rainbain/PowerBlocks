@@ -93,10 +93,6 @@ typedef struct {
     StaticSemaphore_t semaphore_data[1];
 } wiimote_hid_t;
 
-// Attempts to connect to the bluetooth device and setup everything
-// Returns a bluetooth error code if failed
-extern int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_info_t* discovery, int slot);
-
 // Closes a connection to a wiimote
 extern void wiimote_hid_close(wiimote_hid_t* wiimote);
 
@@ -108,8 +104,15 @@ extern int wiimote_hid_set_report(wiimote_hid_t* wiimote, uint8_t report_type, b
 // Will allow connection if a valid wiimote and a slot is available.
 extern bool wiimote_hid_driver_filter(const hci_discovered_device_info_t* device, const char* device_name);
 
-// Called to initiate a driver
-extern void* wiimote_hid_driver_initialize(const hci_discovered_device_info_t* device);
+// Driver filter paired callback
+// Will allow connection if this wiimote has been paired to the wii before.
+extern bool wiimote_hid_driver_filter_paired(const hci_discovered_device_info_t* device);
+
+// Called to initiate a driver for a newly paired wiimote
+extern void* wiimote_hid_driver_initialize_new(const hci_discovered_device_info_t* device);
+
+// Called to initiate a driver for a reconnecting wiimote
+extern void* wiimote_hid_driver_initialize_paired(const hci_discovered_device_info_t* device);
 
 // Called when the device needs to go
 extern void wiimote_hid_driver_free_device(void* instance);

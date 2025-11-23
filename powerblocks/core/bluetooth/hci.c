@@ -146,10 +146,12 @@ typedef struct {
 #define HCI_EVENT_CODE_INQUIRY_COMPLETE             0x01
 #define HCI_EVENT_CODE_INQUIRY_RESULT               0x02
 #define HCI_EVENT_CONNECTION_COMPLETE               0x03
+#define HCI_EVENT_CONNECTION_REQUEST                0x04
 #define HCI_EVENT_CODE_REMOTE_NAME_REQUEST_COMPLETE 0x07
 #define HCI_EVENT_CODE_COMMAND_COMPLETE             0x0E
 #define HCI_EVENT_CODE_COMMAND_STATUS               0x0F
 #define HCI_EVENT_HARDWARE_ERROR                    0x10
+#define HCI_EVENT_ROLE_CHANGE                       0x12
 #define HCI_EVENT_ACL_NUMBER_OF_COMPLETE_PACKETS    0x13
 
 #define HCI_OPCODE_READ_LOCAL_VERSION_INFORMATION 0x1001
@@ -159,6 +161,8 @@ typedef struct {
 #define HCI_OPCODE_INQUIRY_START                  0x0401
 #define HCI_OPCODE_INQUIRY_CANCEL                 0x0402
 #define HCI_OPCODE_CREATE_CONNECTION              0x0405
+#define HCI_OPCODE_ACCEPT_CONNECTION              0x0409
+#define HCI_OPCODE_REJECT_CONNECTION              0x040A
 #define HCI_OPCODE_REMOTE_NAME_REQUEST            0x0419
 #define HCI_OPCODE_SET_EVENT_MASK                 0x0C01
 #define HCI_OPCODE_RESET                          0x0C03
@@ -202,6 +206,10 @@ static struct {
     volatile hci_discovered_device_handler discovery_discover_handler;
     volatile hci_discovery_complete_handler discovery_complete_handler;
     void* discovery_user_data;
+
+    // Connection Request handler
+    hci_connection_request_handler_t connection_request_handler;
+    void* connection_request_user_data;
 
     StaticSemaphore_t semaphore_data[4];
 } hci_state;
@@ -684,6 +692,11 @@ int hci_reset() {
     return ret;
 }
 
+void hci_set_connection_request_handler(hci_connection_request_handler_t handler, void* user_data) {
+    hci_state.connection_request_handler = handler;
+    hci_state.connection_request_user_data = user_data;
+}
+
 int hci_write_scan_enable(bool enable_inquiry_scan, bool enable_page_scan) {
     uint8_t mode = 0;
     if(enable_inquiry_scan) mode |= 0x01;
@@ -693,6 +706,54 @@ int hci_write_scan_enable(bool enable_inquiry_scan, bool enable_page_scan) {
     int ret = hci_send_command(HCI_OPCODE_WRITE_SCAN_ENABLE, &mode, sizeof(mode), NULL, 0, NULL);
     xSemaphoreGive(hci_state.lock);
 
+    return ret;
+}
+
+int hci_reject_connection(const hci_discovered_device_info_t* info, hci_reject_reason_t reason){ 
+    uint8_t buffer[7];
+    memcpy(buffer, info->address, 6);
+    buffer[6] = reason;
+
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
+    int ret = hci_send_command(HCI_OPCODE_REJECT_CONNECTION, buffer, sizeof(buffer), NULL, 0, NULL);
+    xSemaphoreGive(hci_state.lock);
+
+    return ret;
+}
+
+int hci_accept_connection(const hci_discovered_device_info_t* info, bool role_swich, uint16_t* handle) {
+    uint8_t buffer[7];
+    memcpy(buffer, info->address, 6);
+    buffer[6] = role_swich ? 0x00 : 0x01; // 0x00 is to role switch. Backwards
+
+    uint8_t connection_handle_buffer[11];
+
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
+    hci_state.current_connection_request = connection_handle_buffer;
+
+    int ret = hci_send_command(HCI_OPCODE_ACCEPT_CONNECTION, buffer, sizeof(buffer), NULL, 0, NULL);
+    if(ret < 0) {
+        xSemaphoreGive(hci_state.lock);
+        return ret;
+    }
+
+    // Wait for the connection to be created
+    // Poll for completion and report error
+    ret = hci_command_wait_response();
+    if(ret < 0) {
+        xSemaphoreGive(hci_state.lock);
+        return ret;
+    }
+
+    // Handle Error
+    if(connection_handle_buffer[0] != 0) {
+        xSemaphoreGive(hci_state.lock);
+        return BLERROR_HCI_CONNECT_FAILED;
+    }
+
+    *handle = ((uint16_t)connection_handle_buffer[1] << 0) | ((uint16_t)connection_handle_buffer[2] << 8);
+
+    xSemaphoreGive(hci_state.lock);
     return ret;
 }
 
@@ -997,6 +1058,10 @@ static void hci_task_handle_inquiry_result(const hci_event* event) {
     // Store info
     hci_discovered_device_info_t info;
 
+    // These are not specified
+    info.link_type = 0x0;
+    info.connection_request = false;
+
     // Step through each discovery
     const uint8_t* buffer = event->parameters + 1;
     size_t remaining = event->parameter_length - 1;
@@ -1048,6 +1113,32 @@ static void hci_task_handle_connection_complete(const hci_event* event) {
     // Alert waiter
     hci_state.current_connection_request = NULL;
     xSemaphoreGive(hci_state.waiter_event);
+}
+
+static void hci_task_handle_connection_request(const hci_event* event) {
+    // Make sure its long enough
+    if(event->parameter_length < 10) {
+        HCI_LOG_ERROR(TAG, "Connection request parameters too small.");
+        return;
+    }
+
+    // Store info
+    hci_discovered_device_info_t info;
+
+    // These are not specified
+    info.clock_offset = 0x0;
+    info.page_scan_repetition_mode = 0x0;
+    info.connection_request = true;
+
+    // Deserialize
+    memcpy(info.address, event->parameters + 0, 6);
+    info.class_of_device = ((uint32_t)event->parameters[6] << 0) | ((uint32_t)event->parameters[7] << 8) | ((uint32_t)event->parameters[8] << 16);
+    info.link_type = event->parameters[9];
+
+    // Trigger handler
+    if(hci_state.connection_request_handler) {
+        hci_state.connection_request_handler(hci_state.connection_request_user_data, &info);
+    }
 }
 
 static void hci_task_handle_name_request_complete(const hci_event* event) {
@@ -1106,6 +1197,21 @@ static void hci_task_handle_acl_complete_packets(const hci_event* event) {
     }
 }
 
+void hci_task_handle_role_change_event(const hci_event* event) {
+    // Make sure it is of minimum size
+    if(event->parameter_length < 8) {
+        HCI_LOG_ERROR(TAG, "Role change event too small.");
+        return;
+    }
+
+    // Log it if not successful
+    if(!event->parameters[0]) {
+        const uint8_t* mac = event->parameters + 1;
+        HCI_LOG_ERROR(TAG, "Role change failure %d on device %02X:%02X:%02X:%02X:%02X:%02X",
+            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    }
+}
+
 SemaphoreHandle_t hcl_acl_packet_out_lock;
 hci_event hci_event_buffer MEM2 ALIGN(32);
 hci_acl_packet_t hci_acl_packet_out ALIGN(32) MEM2;
@@ -1133,6 +1239,9 @@ static void hci_task(void* unused_1) {
             case HCI_EVENT_CONNECTION_COMPLETE:
                 hci_task_handle_connection_complete(&hci_event_buffer);
                 break;
+            case HCI_EVENT_CONNECTION_REQUEST:
+                hci_task_handle_connection_request(&hci_event_buffer);
+                break;
             case HCI_EVENT_CODE_REMOTE_NAME_REQUEST_COMPLETE:
                 hci_task_handle_name_request_complete(&hci_event_buffer);
                 break;
@@ -1149,6 +1258,10 @@ static void hci_task(void* unused_1) {
                     break;
                 }
                 HCI_LOG_ERROR(TAG, "Hardware Error Event: %02X", hci_event_buffer.parameters[0]);
+                break;
+            
+            case HCI_EVENT_ROLE_CHANGE:
+                hci_task_handle_role_change_event(&hci_event_buffer);
                 break;
             
             case HCI_EVENT_ACL_NUMBER_OF_COMPLETE_PACKETS:

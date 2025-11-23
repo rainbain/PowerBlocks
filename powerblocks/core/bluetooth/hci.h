@@ -26,9 +26,14 @@
 
 typedef struct {
     uint8_t address[6];
+    uint8_t link_type; // Only set on connection request handler. 0 otherwise
     uint8_t page_scan_repetition_mode;
     uint32_t class_of_device;
     uint16_t clock_offset;
+
+    // True if this is from a connection request event
+    // and not from an enquiry.
+    bool connection_request;
 } hci_discovered_device_info_t;
 
 typedef struct {
@@ -53,6 +58,13 @@ typedef enum {
     HCI_ACL_PACKET_BROADCAST_FLAG_ACTIVE_DEVICE,
     HCI_ACL_PACKET_BROADCAST_FLAG_PARKED_DEVICE,
 } hci_acl_packet_broadcast_flag_t;
+
+// Reasons for rejecting a connection
+typedef enum {
+    HCI_REJECT_REASON_LIMITED_RESOURCES =    0x0D,
+    HCI_REJECT_REASON_SECURITY_REASONS  =    0x0E,
+    HCI_REJECT_REASON_UNACCEPTABLE_ADDRESS = 0x0F
+} hci_reject_reason_t;
 
 // HCI Defines multiple inquiry modes. We will probably ever use one.
 #define HCI_INQUIRY_MODE_GENERAL_ACCESS 0x9E8B33
@@ -97,6 +109,14 @@ typedef void (*hci_discovered_device_handler)(void* user_data, const hci_discove
 typedef void (*hci_discovery_complete_handler)(void* user_data, uint8_t error);
 
 /**
+ * @brief Callback for handling a connection request
+ *
+ * @param user_data User-defined context passed to the callback.
+ * @param device    Pointer to the discovered device information.
+ */
+typedef void (*hci_connection_request_handler_t)(void* user_data, const hci_discovered_device_info_t* device);
+
+/**
  * @brief Initializes the HCI interface
  * 
  * Initializes the HCI driver opening the USB interface in IOS.
@@ -127,6 +147,25 @@ extern void hci_close();
 extern int hci_reset();
 
 /**
+ * @brief Set the HCI connection request handler.
+ * 
+ * Set a function to be called when a connection request event is received.
+ * 
+ * hci_write_scan_enable with enable_page_scan true must be done in order
+ * to see these.
+ * 
+ * This event is called when a device, like a wiimote, is attempting to reconnect
+ * to a paired device.
+ * 
+ * You must eather accept or reject the connection on another thread with
+ * hci_accept_connection or hci_reject_connection.
+ * 
+ * It is not recommended to write this register with page scan enabled for
+ * thread safety.
+ */
+extern void hci_set_connection_request_handler(hci_connection_request_handler_t handler, void* user_data);
+
+/**
  * @brief Writes the HCI's page scan register.
  * 
  * enable_inquiry_scan will make it so HCI responds to other device's
@@ -141,6 +180,33 @@ extern int hci_reset();
  * @return Negative if Error
  */
 extern int hci_write_scan_enable(bool enable_inquiry_scan, bool enable_page_scan);
+
+/**
+ * @brief Rejects an incoming connection request.
+ * 
+ * Rejects an incoming connection request from page scan.
+ * This can be for a number of reasons specified by the caller
+ * 
+ * @param info Device connection request
+ * @param reason Reason for rejecting the connection.
+ * 
+ * @return Negative if Error
+ */
+extern int hci_reject_connection(const hci_discovered_device_info_t* info, hci_reject_reason_t reason);
+
+/**
+ * @brief Accepts an incoming connection request.
+ * 
+ * Accepts an incoming connection request from page scan.
+ * By default you are the device, and the one who created the request is the host.
+ * But in the event the connection request is from a reconnecting device,
+ * say a wiimote, you will want to role switch as the host.
+ * 
+ * @param info Device connection request
+ * @param role_switch Role switch to host/master.
+ * @param handle Output handle. Not NULL!
+ */
+extern int hci_accept_connection(const hci_discovered_device_info_t* info, bool role_swich, uint16_t* handle);
 
 /**
  * @brief Begins looking for bluetooth devices.

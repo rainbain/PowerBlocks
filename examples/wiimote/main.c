@@ -286,13 +286,6 @@ int main() {
 
     wiimotes_initialize();
 
-    printf("Begining Discovery!\n");
-    ret = bltools_begin_automatic_discovery(portMAX_DELAY);
-    if(ret < 0) {
-        printf("Auto discovery failed.\n");
-    }
-
-
     while(true) {
         wiimote_poll();
 
