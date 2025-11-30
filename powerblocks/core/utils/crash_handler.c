@@ -71,15 +71,10 @@ void crash_handler_bug_check(const char* cause, exception_context_t* ctx) {
 
         text_pos.y += font.character_size.y;
 
-        for(int y = 0; y < 8; y++) {
-            for(int x = 0; x < 4; x++) {
-                int index = y + x * 8;
-                sprintf(buffer, "F%02d:%+1.4E", index, ctx->f[index]);
-                //framebuffer_put_text(fb, 0xFFFFFFFF, 0x00000000, vec2i_new(text_pos.x + HORIZONTAL_SPACING * x, text_pos.y), &font, buffer);
-            }
+        sprintf(buffer, "LR:%08X", ctx->lr);
+        framebuffer_put_text(fb, 0xFFFFFFFF, 0x00000000, vec2i_new(text_pos.x, text_pos.y), &font, buffer);
 
-            text_pos.y += font.character_size.y;
-        }
+        text_pos.y += font.character_size.y;
     }
 
     // Flush framebuffer
