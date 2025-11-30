@@ -106,6 +106,9 @@ extern void wiimote_poll();
 // -1 if not slot
 extern int wiimote_find_empty_slot();
 
+// Removes a slot
+extern int wiimote_remove_slot(void* driver);
+
 // Sets what data the wiimote will report
 // Same thing as the "present" stuff
 extern int wiimote_set_reporting(wiimote_t* wiimote, int present);

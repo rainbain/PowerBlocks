@@ -77,9 +77,9 @@ typedef struct {
 
     l2cap_device_t device;
 
-    l2cap_channel_t control_channel;
-    l2cap_channel_t interrupt_channel;
+    l2cap_channel_t channels[3];
 
+    uint8_t wiimote_signal_channel_buffer[256];
     uint8_t wiimote_control_channel_buffer[16]; // This channel is barely used if at all.
     uint8_t wiimote_interrupt_channel_buffer[256];
 
@@ -113,6 +113,3 @@ extern void* wiimote_hid_driver_initialize_new(const hci_discovered_device_info_
 
 // Called to initiate a driver for a reconnecting wiimote
 extern void* wiimote_hid_driver_initialize_paired(const hci_discovered_device_info_t* device);
-
-// Called when the device needs to go
-extern void wiimote_hid_driver_free_device(void* instance);

@@ -47,6 +47,14 @@
 // Memory space 0x00, EEPROM
 #define WIIMOTE_MEMORY_EEPROM_CALIBRATION 0x00000016
 
+// Bluetooth Channels
+#define CONTROL_CHANNEL_SID   0x0040
+#define INTERRUPT_CHANNEL_SID 0x0041
+
+#define SIGNAL_CHANNEL_INDEX    0
+#define CONTROL_CHANNEL_INDEX   1
+#define INTERRUPT_CHANNEL_INDEX 2
+
 static int wiimote_write_memory(wiimote_hid_t* wiimote, uint32_t address, const uint8_t* data, size_t size);
 static int wiimote_hid_request_extension_type(wiimote_hid_t* wiimote);
 
@@ -74,9 +82,11 @@ static void wiimote_handle_status_report(wiimote_hid_t* wiimote, const uint8_t* 
     // Reenable reporting.
     // Since I have coded it to never request a report,
     // If we get a unrequest report, it is required we reenable reporting.
-    uint8_t old_report_mode = wiimote->set_report_mode;
-    wiimote->set_report_mode = 0; // We want it to update this, since its been disabled
-    wiimote_hid_set_report(wiimote, old_report_mode, false);
+    uint16_t old_mode = wiimote->set_report_mode;
+    wiimote->set_report_mode = 0;
+    wiimote_hid_set_report(wiimote, old_mode, false);
+
+    printf("report in, set it to: %d\n", wiimote->set_report_mode);
 
     // Check for any extension, or lack there of
     if(report[2] & WIIMOTE_FLAGS_EXTENSION_CONNECTED) {
@@ -286,14 +296,14 @@ static void wiimote_on_report_in(void* channel_v, void* wiimote_v) {
 static int wiimote_request_status(wiimote_hid_t* wiimote) {
     uint8_t payload[3] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_STATUS, 0};
 
-    return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+    return l2cap_send_channel(&wiimote->channels[INTERRUPT_CHANNEL_INDEX], payload, sizeof(payload));
 }
 
 // Sets the 4 leds
 static int wiimote_hid_set_leds(wiimote_hid_t* wiimote, uint8_t leds) {
     uint8_t payload[3] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_LEDS, leds};
 
-    return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+    return l2cap_send_channel(&wiimote->channels[INTERRUPT_CHANNEL_INDEX], payload, sizeof(payload));
 }
 
 // Will request to read memory, then you must handle the request in the switch statement.
@@ -302,7 +312,7 @@ static int wiimote_request_read_memory(wiimote_hid_t* wiimote, uint32_t address,
         (address >> 24) & 0xFF, (address >> 16) & 0xFF, (address >> 8) & 0xFF, (address >> 0) & 0xFF,
         size >> 8, size & 0xFF}; // Request 8 bytes
     
-    return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+    return l2cap_send_channel(&wiimote->channels[INTERRUPT_CHANNEL_INDEX], payload, sizeof(payload));
 }
 
 // Writes to the internal memory of the wiimote
@@ -319,7 +329,7 @@ static int wiimote_write_memory(wiimote_hid_t* wiimote, uint32_t address, const 
     
     memcpy(payload + 7, data, size);
 
-    return l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+    return l2cap_send_channel(&wiimote->channels[INTERRUPT_CHANNEL_INDEX], payload, sizeof(payload));
 }
 
 // Request to read back the extension type thats connected
@@ -338,13 +348,13 @@ static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
     {
         // Clock on
         uint8_t payload[3] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_ENABLE_CAMERA_CLOCK, 0x04};
-        ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+        ret = l2cap_send_channel(&wiimote->channels[INTERRUPT_CHANNEL_INDEX], payload, sizeof(payload));
         if(ret < 0)
             return ret;
         
         // Enable line
         payload[1] = WIIMOTE_REPORT_ENABLE_CAMERA;
-        ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+        ret = l2cap_send_channel(&wiimote->channels[INTERRUPT_CHANNEL_INDEX], payload, sizeof(payload));
         if(ret < 0)
             return ret;
     }
@@ -402,7 +412,15 @@ static int wiimote_initialize_ir_camera(wiimote_hid_t* wiimote) {
     return 0;
 }
 
-static int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_info_t* discovery, int slot, uint16_t handle) {
+static void wiimote_hid_disconnection_handler(void* user_data, uint8_t reason) {
+    wiimote_hid_t* wiimote = (wiimote_hid_t*)user_data;
+
+    WIIMOTE_LOG_INFO("Wiimote %d disconnected", wiimote->slot);
+    wiimote_remove_slot(wiimote);
+}
+
+
+static void wiimote_hid_initialize_state(wiimote_hid_t* wiimote, int slot) {
     // Clear out data
     memset(wiimote, 0, sizeof(*wiimote));
 
@@ -414,52 +432,49 @@ static int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_d
     wiimote->internal_state.calibration.accel_one[1] = 104;
     wiimote->internal_state.calibration.accel_one[2] = 104;
 
-    // Setup
+    // Slot and mutex
     wiimote->slot = slot;
     wiimote->internal_state_lock = xSemaphoreCreateMutexStatic(&wiimote->semaphore_data[0]);
+
+    // Setup Channels.
+    // My L2CAP implementation requires that you
+    // You initialize the channels ahead of time, and with fixed IDs so that
+    // When a wiimote connects to the wii, that it can open the channels and you dont
+    // need to worry about trying to add them in the time between hci connection and the request
+    l2cap_initialize_channel(&wiimote->device, // Signal Channel, Required For Bluetooth Coms
+        &wiimote->channels[SIGNAL_CHANNEL_INDEX],         // Handle / Memory
+        0x0001,                                           // Source ID (Our ID)
+        0x0001,                                           // Destination ID (Devices ID)
+        0x0000,                  
+        wiimote->wiimote_signal_channel_buffer,
+        sizeof(wiimote->wiimote_signal_channel_buffer));
     
-    int ret;
+    l2cap_initialize_channel(&wiimote->device,
+        &wiimote->channels[CONTROL_CHANNEL_INDEX],
+        CONTROL_CHANNEL_SID,
+        0,
+        0x0011,
+        wiimote->wiimote_control_channel_buffer,
+        sizeof(wiimote->wiimote_control_channel_buffer));
 
-    // Open L2CAP Connection
-    ret = l2cap_open_device(&wiimote->device, handle, discovery->address);
-    if(ret < 0) {
-        WIIMOTE_LOG_ERROR("Failed to make L2CAP connection! %d", ret);
-        return ret;
-    }
+    l2cap_initialize_channel(&wiimote->device,
+        &wiimote->channels[INTERRUPT_CHANNEL_INDEX],
+        INTERRUPT_CHANNEL_SID,
+        0,
+        0x0013,
+        wiimote->wiimote_interrupt_channel_buffer,
+        sizeof(wiimote->wiimote_interrupt_channel_buffer));
+}
 
-    // TODO: If these fail, close the L2CAP instance correctly
-    // Open Control Channel
-    // Used for commands (though I dont think it uses any)
-    WIIMOTE_LOG_INFO("Opening Control Channel");
-    ret = l2cap_open_channel(&wiimote->device, &wiimote->control_channel, 0x11,
-        wiimote->wiimote_control_channel_buffer, sizeof(wiimote->wiimote_control_channel_buffer));
-    if(ret < 0) {
-        WIIMOTE_LOG_ERROR("Failed to make control channel! %d", ret);
-        return ret;
-    }
-
-    // Open Interrupt Channel
-    // Used for 
-    WIIMOTE_LOG_INFO("Opening Interrupt Channel");
-    ret = l2cap_open_channel(&wiimote->device, &wiimote->interrupt_channel, 0x13,
-        wiimote->wiimote_interrupt_channel_buffer, sizeof(wiimote->wiimote_interrupt_channel_buffer));
-    if(ret < 0) {
-        WIIMOTE_LOG_ERROR("Failed to make interrupt channel! %d", ret);
-        return ret;
-    }
-
-    // Set up events
-    l2cap_set_channel_receive_event(&wiimote->interrupt_channel, wiimote_on_report_in, wiimote);
-
+static int wiimote_hid_initialize(wiimote_hid_t* wiimote, const hci_discovered_device_info_t* discovery, uint16_t handle) {
+    
     WIIMOTE_LOG_INFO("Configuring Wiimote");
 
-    // Set reporting
+    // Default reporting mode
     wiimote_hid_set_report(wiimote, WIIMOTE_REPORT_BUTTONS_ACCEL_IR10_EXT6, false);
 
-    vTaskDelay(50 / portTICK_PERIOD_MS);
-
     // LEDs
-    ret = wiimote_hid_set_leds(wiimote, 0x10 << (slot & 0b11));
+    int ret = wiimote_hid_set_leds(wiimote, 0x10 << (wiimote->slot & 0b11));
     if(ret < 0) {
         WIIMOTE_LOG_ERROR("Set LEDs failed %d", ret);
         return ret;
@@ -500,7 +515,7 @@ int wiimote_hid_set_report(wiimote_hid_t* wiimote, uint8_t report_type, bool upd
         uint8_t payload[4] = {WIIMOTE_HID_OUTPUT_REPORT, WIIMOTE_REPORT_REPORT_MODE, 0x00, report_type};
 
         wiimote->set_report_mode = report_type;
-        ret = l2cap_send_channel(&wiimote->interrupt_channel, payload, sizeof(payload));
+        ret = l2cap_send_channel(&wiimote->channels[INTERRUPT_CHANNEL_INDEX], payload, sizeof(payload));
         if(ret < 0)
             return ret;
     }
@@ -600,6 +615,9 @@ void* wiimote_hid_driver_initialize_new(const hci_discovered_device_info_t* devi
     if(driver == NULL)
         return NULL;
 
+    // Track if on error, we need to disconnect, or even l2cap
+    int init_state = 0;
+
     // Create Connection
     uint16_t handle;
     int ret = hci_create_connection(device, &handle);
@@ -607,18 +625,62 @@ void* wiimote_hid_driver_initialize_new(const hci_discovered_device_info_t* devi
         // This is treated as a "info".
         // Its fine for us to attempt reconnection to devices and fail.
         WIIMOTE_LOG_INFO("Failed to make HCI connection! %d", ret);
-        return NULL;
+        goto DRIVER_LOAD_FAILED;
+    }
+    init_state++;
+
+    // Clear wiimote state
+    wiimote_hid_initialize_state(driver, slot);
+
+    // Open Device
+    ret = l2cap_open_device(&driver->device, handle, device->address, driver->channels, 3);
+    if(ret < 0) {
+        WIIMOTE_LOG_ERROR("Failed to make L2CAP connection! %d", ret);
+        goto DRIVER_LOAD_FAILED;
+    }
+
+    init_state++;
+
+    // Handlers
+    l2cap_set_disconnect_handler(&driver->device, wiimote_hid_disconnection_handler, driver);
+    l2cap_set_channel_receive_event(&driver->channels[INTERRUPT_CHANNEL_INDEX], wiimote_on_report_in, driver);
+
+    // Open L2CAP Channels, Automatically configured
+    WIIMOTE_LOG_INFO("Opening Control Channel");
+    ret = l2cap_open_channel(&driver->device, &driver->channels[CONTROL_CHANNEL_INDEX]);
+    if(ret < 0) {
+        WIIMOTE_LOG_ERROR("Failed to make control channel! %d", ret);
+        goto DRIVER_LOAD_FAILED;
+    }
+
+    WIIMOTE_LOG_INFO("Opening Interrupt Channel");
+    ret = l2cap_open_channel(&driver->device, &driver->channels[INTERRUPT_CHANNEL_INDEX]);
+    if(ret < 0) {
+        WIIMOTE_LOG_ERROR("Failed to make interrupt channel! %d", ret);
+        goto DRIVER_LOAD_FAILED;
     }
     
-    ret = wiimote_hid_initialize(driver, device, slot, handle);
-    if(ret < 0) {
-        free(driver);
-        return NULL;
-    }
+    ret = wiimote_hid_initialize(driver, device, handle);
+    if(ret < 0)
+        goto DRIVER_LOAD_FAILED;
 
     WIIMOTES[slot].driver = driver;
-
     return driver;
+
+
+DRIVER_LOAD_FAILED:
+    // Remove from l2cap
+    if(init_state >= 2) {
+        l2cap_close_device(&driver->device);
+    }
+
+    // Release connection
+    if(init_state >= 1) {
+        hci_disconnect(handle);
+    }
+
+    free(driver);
+    return NULL;
 }
 
 void* wiimote_hid_driver_initialize_paired(const hci_discovered_device_info_t* device) {
@@ -637,6 +699,9 @@ void* wiimote_hid_driver_initialize_paired(const hci_discovered_device_info_t* d
         return NULL;
     }
 
+    // Track if on error, we need to disconnect, or even l2cap
+    int init_state = 0;
+
     // Create Connection
     uint16_t handle;
     int ret = hci_accept_connection(device, true, &handle);
@@ -644,21 +709,57 @@ void* wiimote_hid_driver_initialize_paired(const hci_discovered_device_info_t* d
         // This is treated as a "info".
         // Its fine for us to attempt reconnection to devices and fail.
         WIIMOTE_LOG_INFO("Failed to make HCI connection! %d", ret);
-        return NULL;
+        goto DRIVER_LOAD_FAILED;
+    }
+    init_state++;
+
+    // Clear wiimote state
+    wiimote_hid_initialize_state(driver, slot);
+
+    // Open Device
+    ret = l2cap_open_device(&driver->device, handle, device->address, driver->channels, 3);
+    if(ret < 0) {
+        WIIMOTE_LOG_ERROR("Failed to make L2CAP connection! %d", ret);
+        goto DRIVER_LOAD_FAILED;
+    }
+    init_state++;
+
+    // Handlers
+    l2cap_set_disconnect_handler(&driver->device, wiimote_hid_disconnection_handler, driver);
+    l2cap_set_channel_receive_event(&driver->channels[INTERRUPT_CHANNEL_INDEX], wiimote_on_report_in, driver);
+
+    // Wait for channels to become open and configured
+    ret = l2cap_wait_channel_status(&driver->channels[CONTROL_CHANNEL_INDEX], L2CAP_CHANNEL_STATUS_OPEN | L2CAP_CHANNEL_STATUS_LOCAL_CONFIGURED, NULL);
+    if(ret < 0) {
+        WIIMOTE_LOG_ERROR("Timed out waiting for wiimote to open control channel. Disconnecting.");
+        goto DRIVER_LOAD_FAILED;
+    }
+
+    ret = l2cap_wait_channel_status(&driver->channels[INTERRUPT_CHANNEL_INDEX], L2CAP_CHANNEL_STATUS_OPEN | L2CAP_CHANNEL_STATUS_LOCAL_CONFIGURED, NULL);
+    if(ret < 0) {
+        WIIMOTE_LOG_ERROR("Timed out waiting for wiimote to open interrupt channel. Disconnecting.");
+        goto DRIVER_LOAD_FAILED;
     }
     
-    ret = wiimote_hid_initialize(driver, device, slot, handle);
-    if(ret < 0) {
-        free(driver);
-        return NULL;
-    }
+    ret = wiimote_hid_initialize(driver, device, handle);
+    if(ret < 0)
+        goto DRIVER_LOAD_FAILED;
 
     WIIMOTES[slot].driver = driver;
 
     return driver;
-}
 
-// Called when the device needs to go
-void wiimote_hid_driver_free_device(void* instance) {
+DRIVER_LOAD_FAILED:
+    // Remove from l2cap
+    if(init_state >= 2) {
+        l2cap_close_device(&driver->device);
+    }
 
+    // Release connection
+    if(init_state >= 1) {
+        hci_disconnect(handle);
+    }
+
+    free(driver);
+    return NULL;
 }

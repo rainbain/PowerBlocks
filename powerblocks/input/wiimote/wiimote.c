@@ -385,7 +385,6 @@ void wiimotes_initialize() {
         .filter_paired_device = wiimote_hid_driver_filter_paired,
         .initialize_new_device = wiimote_hid_driver_initialize_new,
         .initialize_paired_device = wiimote_hid_driver_initialize_paired,
-        .free_device = wiimote_hid_driver_free_device
     };
 
     bltools_register_driver(driver);
@@ -470,6 +469,16 @@ int wiimote_find_empty_slot() {
     for(int i = 0; i < WIIMOTE_MAX_REMOTES; i++) {
         if(WIIMOTES[i].driver == NULL) {
             return i;
+        }
+    }
+    return -1;
+}
+
+int wiimote_remove_slot(void* driver) {
+    for(int i = 0; i < WIIMOTE_MAX_REMOTES; i++) {
+        if(WIIMOTES[i].driver == driver) {
+            WIIMOTES[i].driver = NULL;
+            return 0;
         }
     }
     return -1;
