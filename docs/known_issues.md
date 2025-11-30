@@ -48,6 +48,16 @@ A proper blackout would prevent this.
 
 ---
 
+# Bluetooth
+
+## No double buffering on HCI.
+HCI receive events from bluetooth endpoint likely need to be double buffered. Not doing this causes it to drop HCI events.
+
+# Missing L2CAP Channel Disconnect Event Handler
+This code does not handle when a L2CAP channel attempts to disconnect. HCI disconnects are respect to be the master disconnect all.
+
+---
+
 # Wii Remotes (Wiimotes)
 
 ## Missing Extensions
