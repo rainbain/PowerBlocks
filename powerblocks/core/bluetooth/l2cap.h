@@ -31,7 +31,13 @@
 #define L2CAP_DEFAULT_MTU           185
 #define L2CAP_DEFAULT_FLUSH_TIMEOUT 0xFFFF
 
+#define L2CAP_CHANNEL_STATUS_OPEN              (1<<0)
+#define L2CAP_CHANNEL_STATUS_LOCAL_CONFIGURED  (1<<1) // We have configured the channel
+#define L2CAP_CHANNEL_STATUS_REMOTE_CONFIGURED (1<<2) // The remote has configured the channel
+#define L2CAP_CHANNEL_STATUS_ERROR             (1<<3)
+
 typedef void (*l2cap_channel_event_t)(void* channel, void* user);
+typedef void (*l2cap_disconnect_handler_t)(void* user, uint8_t reason);
 
 // Used internally by L2CAP when handling the signal channel.
 typedef struct {
@@ -46,8 +52,15 @@ typedef struct {
     void* device; // l2cap_device_t
     uint16_t sid; // Source ID, ID the endpoint will use when talking to us.
     uint16_t did; // Destination ID, ID we use when talking to the endpoint
+    uint16_t protocol_id; // The protocol this channel is
+
+
+    uint16_t status_flags; // Channel flags set by us to track status
+    uint16_t status_error; // Error state from a signal.
 
     SemaphoreHandle_t on_complete_packet;
+    SemaphoreHandle_t on_status_change;
+    SemaphoreHandle_t status_lock;
 
     // Stores multiple packets, each starting with a 16 byte size, then data.
     uint8_t* buffer;
@@ -56,37 +69,32 @@ typedef struct {
     int fifo_write_head_packet; // Up to the last packet.
     int fifo_read_head;
 
-    // Track incoming signals
-    volatile l2cap_signal_t* incoming_signal;
-    volatile uint8_t incoming_id;
-    SemaphoreHandle_t signal_waiter;
-
     // Event for when a new received packet is made available.
     struct {
         l2cap_channel_event_t event;
         void* data;
     } event_packet_available;
 
-    StaticSemaphore_t semaphore_data[2];
+    StaticSemaphore_t semaphore_data[3];
 } l2cap_channel_t;
 
 typedef struct {
     SemaphoreHandle_t lock;
     uint16_t handle;
     struct {
-        l2cap_channel_t** array;
+        l2cap_channel_t* array;
         size_t length;
     } open_channels;
-
-    // Default open channel L2CAP must use
-    l2cap_channel_t signal_channel;
-    uint8_t signal_channel_buffer[L2CAP_SIGNAL_CHANNEL_BUFFER_SIZE];
 
     // L2CAP Reading into Handle State
     l2cap_channel_t* reading_channel;
     uint16_t reading_remaining;
 
     uint8_t mac_address[6];
+
+    // Disconnection handler
+    l2cap_disconnect_handler_t disconnect_handler;
+    void* disconnect_handler_data;
 
     StaticSemaphore_t semaphore_data;
 } l2cap_device_t;
@@ -122,19 +130,40 @@ extern void l2cap_signal_close();
 extern void l2cap_close();
 
 /**
+ * @brief Initialize a channel before use with open device.
+ * 
+ * Sets up a channel, call it to set the parameters of the channels.
+ * 
+ * @param l2cap_device_t Device handle owning the channels
+ * @param l2cap_channel_t Channel instance to configure
+ * @param sid Source id of the channel, this is your id to reference the channel.
+ * @param did Destination id, usually assigned on connect, but is 0x0001 for the signal channel where its expected.
+ * @param protocol_id The socket/protocol this channel will handle. Each protocol has its own
+ * @param buffer Channel data storage buffer.
+ * @param buffer_size Channel data storage buffer size.
+ * 
+ * @return Negative if Error.
+ */
+extern void l2cap_initialize_channel(l2cap_device_t* device, l2cap_channel_t* channel, uint16_t sid, uint16_t did, uint16_t protocol_id, uint8_t* buffer, int buffer_size);
+
+/**
  * @brief Opens a L2CAP Connections
  * 
  * Sets up L2CAP to communicate with a device.
  * This sets up the default signal channel L2CAP uses,
  * and adds the device to L2CAPS list of active devices.
  * 
+ * The signal channel must always be provided as one of the channels.
+ * 
  * @param device_handle L2CAP Device Handle To Create
  * @param hci_device_handle Device handle created by hci_create_connection
  * @param mac_address MAC address of the device. Used to prevent duplicate connections.
+ * @param channels List of possible channels, setup with initialize_channel
+ * @param channel_count Number of channels
  * 
  * @return Negative if Error.
  */
-extern int l2cap_open_device(l2cap_device_t* device_handle, uint16_t hci_device_handle, const uint8_t* mac_address);
+extern int l2cap_open_device(l2cap_device_t* device_handle, uint16_t hci_device_handle, const uint8_t* mac_address, l2cap_channel_t* channels, size_t channel_count);
 
 /**
  * @brief Closes a L2CAP Connection
@@ -146,34 +175,34 @@ extern int l2cap_open_device(l2cap_device_t* device_handle, uint16_t hci_device_
 extern void l2cap_close_device(l2cap_device_t* device_handle);
 
 /**
+ * @brief Set a disconnection handler.
+ * 
+ * Set a function to be called when a device disconnects.
+ * Note, this is called AFTER the device is fully disconnected and L2CAP has
+ * terminated all connections.
+ * 
+ * @param device_handle L2CAP device to set it in
+ * @param handler Handler to call
+ * @param user_data User data to pass to handler
+ */
+extern void l2cap_set_disconnect_handler(l2cap_device_t* device_handle, l2cap_disconnect_handler_t handler, void* user_data);
+
+/**
  * @brief Opens a L2CAP Channel
  * 
  * Once a device is open, channels can be opened and closed.
  * Channels are much like sockets, and each one has its own protocol.
  * 
  * By default, the signal channel is already open and used by L2CAP.
+ * If you attempted to connect to the device, you will need to open the channels.
+ * If the device connects to you, it will be opening the channels.
  * 
  * @param device_handle L2CAP device to open the channel on
- * @param channel Channel data structure to write into
- * @param protocol_id Protocol of the channel. Like the socket.
- * @param rx_buffer The receiving buffer for the channel.
- * @param rx_buffer_size Size of the receiving buffer. Must be a power of 2.
+ * @param channel Channel to open.
  * 
  * @return Negative if Error.
  */
-extern int l2cap_open_channel(l2cap_device_t* device_handle, l2cap_channel_t* channel, uint16_t protocol_id, uint8_t* rx_buffer, int rx_buffer_size);
-
-/**
- * @brief Closes a L2CAP Channel
- * 
- * Closes a channel and frees its resources.
- * 
- * This will automatically be done for any remaining open channels when calling
- * l2cap_close_device.
- * 
- * @param channel Channel to close.
- */
-extern void l2cap_close_channel(l2cap_channel_t* channel);
+extern int l2cap_open_channel(l2cap_device_t* device_handle, l2cap_channel_t* channel);
 
 /**
  * @brief Sends data over a L2CAP Channel
@@ -226,3 +255,15 @@ extern int l2cap_receive_channel(l2cap_channel_t* channel, void* data, uint16_t 
  * @param param Parameter passed to event.
  */
 extern void l2cap_set_channel_receive_event(l2cap_channel_t* channel, l2cap_channel_event_t event, void* param);
+
+/**
+ * @brief Waits for a channel to enter a specific state.
+ * 
+ * Will wait until signal timeout for the flag bits to be set.
+ * Any status codes returned by the last event will be set in error_code.
+ * 
+ * @param channel Channel to wait on
+ * @param flags Flag bits that must be set
+ * @param error_code Returned error code, can be null
+ */
+int l2cap_wait_channel_status(l2cap_channel_t* channel, uint16_t flags, uint16_t *error_code);

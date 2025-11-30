@@ -43,9 +43,6 @@ typedef struct {
     // Return a non-null reference to the device if successful
     // This is called for already paired devices, and who may want their connection request accepted
     void* (*initialize_paired_device)(const hci_discovered_device_info_t* device);
-
-    // Called when the device is disconnected. Free up the driver
-    void (*free_device)(void* instance);
 } bluetooth_driver_t;
 
 typedef struct {

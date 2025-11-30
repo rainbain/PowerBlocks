@@ -39,7 +39,7 @@ static const char* TAG = "L2CAP";
 #define L2CAP_SIGNAL_TIMEOUT 1000 // 1s
 
 #define L2CAP_ERROR_LOGGING
-#define L2CAP_INFO_LOGGING
+//#define L2CAP_INFO_LOGGING
 //#define L2CAP_DEBUG_LOGGING
 
 #ifdef L2CAP_ERROR_LOGGING
@@ -63,6 +63,7 @@ static const char* TAG = "L2CAP";
 static struct {
     TaskHandle_t task;
     SemaphoreHandle_t waiter;
+    SemaphoreHandle_t state_lock;
 
     struct {
         l2cap_device_t** array;
@@ -74,19 +75,31 @@ static struct {
     // Signals get an ID so you know their associated response.
     uint8_t current_signal_id;
 
-    StaticSemaphore_t semaphore_data[1];
+    StaticSemaphore_t semaphore_data[2];
+
+    // Store a packet we get before being able to handle a connection
+    bool floating_packet_available;
+    uint16_t floating_packet_handle;
+    hci_acl_packet_t floating_packet;
+
 } l2cap_state;
 
 static void l2cap_task(void* unused_1);
+static void l2cap_task_buffer_in(const hci_acl_packet_t* packet);
+static void l2cap_set_channel_status_flags(l2cap_channel_t* channel, uint16_t flags, uint16_t error);
+static int l2cap_send_signal(l2cap_channel_t* channel, l2cap_signal_t* signal);
 
-int round = 0;
+#define LOCK() xSemaphoreTake(l2cap_state.state_lock, portMAX_DELAY)
+#define UNLOCK() xSemaphoreGive(l2cap_state.state_lock)
 
 /* -------------------L2CAP Device & Channel Array Management--------------------- */
 static void l2cap_push_device_list(l2cap_device_t* device_handle) {
+    LOCK();
     // Attempt to find a open slot before pushing
     for(size_t i = 0; i < l2cap_state.open_handles.length; i++) {
         if(l2cap_state.open_handles.array[i] == NULL) {
             l2cap_state.open_handles.array[i] = device_handle;
+            UNLOCK();
             return;
         }
     }
@@ -98,81 +111,83 @@ static void l2cap_push_device_list(l2cap_device_t* device_handle) {
 
     l2cap_state.open_handles.array[l2cap_state.open_handles.length] = device_handle;
     l2cap_state.open_handles.length++;
+    UNLOCK();
 }
 
-static void l2cap_push_channel(l2cap_channel_t* channel) {
-    l2cap_device_t* device = (l2cap_device_t*)channel->device;
-
+static void l2cap_remove_device_list(l2cap_device_t* device_handle) {
     // Attempt to find a open slot before pushing
-    for(size_t i = 0; i < device->open_channels.length; i++) {
-        if(device->open_channels.array[i] == NULL) {
-            device->open_channels.array[i] = channel;
-            return;
-        }
+    LOCK();
+    for(size_t i = 0; i < l2cap_state.open_handles.length; i++) {
+        if(l2cap_state.open_handles.array[i] != device_handle)
+            continue;
+        
+        l2cap_state.open_handles.array[i] = NULL;
+        UNLOCK();
+        return;
     }
-
-    device->open_channels.array = realloc(device->open_channels.array, sizeof(l2cap_channel_t*) * (device->open_channels.length + 1));
-
-    // This is really bad, we just incinerated it.
-    ASSERT_OUT_OF_MEMORY(device->open_channels.array);
-
-    device->open_channels.array[device->open_channels.length] = channel;
-    device->open_channels.length++;
+    UNLOCK();
 }
 
 static l2cap_device_t* l2cap_find_device_by_hci_handle(uint16_t handle) {
+    LOCK();
     for(size_t i = 0; i < l2cap_state.open_handles.length; i++) {
         if(l2cap_state.open_handles.array[i] == NULL)
             continue;
 
         if(l2cap_state.open_handles.array[i]->handle == handle) {
+            UNLOCK();
             return l2cap_state.open_handles.array[i];
         }
     }
 
+    UNLOCK();
     return NULL;
 }
 
 static l2cap_device_t* l2cap_find_device_by_mac_address(const uint8_t* mac_address) {
+    LOCK();
     for(size_t i = 0; i < l2cap_state.open_handles.length; i++) {
         if(l2cap_state.open_handles.array[i] == NULL)
             continue;
         
         if(memcmp(l2cap_state.open_handles.array[i]->mac_address, mac_address, 6) == 0) {
+            UNLOCK();
             return l2cap_state.open_handles.array[i];
         }
 
     }
 
+    UNLOCK();
+
     return NULL;
 }
 
 static l2cap_channel_t* l2cap_find_channel_by_sid(const l2cap_device_t* device, uint16_t id) {
+    LOCK();
     for(size_t i = 0; i < device->open_channels.length; i++) {
-        if(device->open_channels.array[i] == NULL)
-            continue;
-        
-        if(device->open_channels.array[i]->sid == id) {
-            return device->open_channels.array[i];
+        if(device->open_channels.array[i].sid == id) {
+            UNLOCK();
+            return &device->open_channels.array[i];
         }
     }
+
+    UNLOCK();
 
     return NULL;
 }
 
-// Find the next free SID (Source CID) for a new L2CAP channel
-static uint16_t l2cap_next_free_scid(const l2cap_device_t* device) {
-    uint16_t sid = 0x0040;
-
-    while (sid != 0x0000) {
-        if (l2cap_find_channel_by_sid(device, sid) == NULL) {
-            return sid; // free slot
+static l2cap_channel_t* l2cap_find_channel_by_protocol_id(const l2cap_device_t* device, uint16_t id) {
+    LOCK();
+    for(size_t i = 0; i < device->open_channels.length; i++) {
+        if(device->open_channels.array[i].protocol_id == id) {
+            UNLOCK();
+            return &device->open_channels.array[i];
         }
-        sid++;
     }
 
-    // No free CIDs found (shouldn’t really happen unless we have more channels than really possible)
-    return 0;
+    UNLOCK();
+
+    return NULL;
 }
 
 /* -------------------L2CAP Signal Channel--------------------- */
@@ -188,6 +203,248 @@ static uint16_t l2cap_next_free_scid(const l2cap_device_t* device) {
 #define L2CAP_SIGNAL_CODE_INFORMATION_REQUEST    0x0A
 #define L2CAP_SIGNAL_CODE_INFORMATION_RESPONSE   0x0B
 
+static void l2cap_on_reject_signal() {
+    L2CAP_LOG_ERROR("Signal rejected!");
+}
+
+// The device has requested to open a channel. Respond to it
+void l2cap_on_connection_request_signal(l2cap_channel_t* signal_channel, const l2cap_signal_t* signal) { 
+    if(signal->length < 4) {
+        L2CAP_LOG_ERROR("Connection Request Too Small. %d Bytes", signal->length);
+        return;
+    }
+
+    // Decode it
+    uint16_t psm = (uint16_t)signal->data[0] | ((uint16_t)signal->data[1] << 8);
+    uint16_t sid = (uint16_t)signal->data[2] | ((uint16_t)signal->data[3] << 8);
+
+    // Begin preparing response
+    l2cap_signal_t signal_out;
+
+    // Build response
+    signal_out.code = L2CAP_SIGNAL_CODE_CONNECTION_RESPONSE;
+    signal_out.id = signal->id;
+    signal_out.length = htole16(8);
+    
+    // SID
+    signal_out.data[2] = sid & 0xFF;
+    signal_out.data[3] = sid >> 8;
+
+    // Status is ok
+    signal_out.data[6] = 0x00;
+    signal_out.data[7] = 0x00;
+
+    // Is this a channel the host supports?
+    l2cap_channel_t* opened_channel = l2cap_find_channel_by_protocol_id((const l2cap_device_t*)signal_channel->device, psm);
+
+    // No, then you cant open it
+    if(opened_channel == NULL) {
+        L2CAP_LOG_ERROR("Device attempted to open an unsupported PSM: %04X", psm);
+        // Dummy DID, since we dont have one for a nonexistance channel
+        signal_out.data[0] = 0x40;
+        signal_out.data[1] = 0x00;
+
+        // Result = Connection refused – PSM not supported.
+        signal_out.data[4] = 0x02;
+        signal_out.data[5] = 0x00;
+    } else {
+        // The channels sid
+        signal_out.data[0] = opened_channel->sid & 0xFF;
+        signal_out.data[1] = opened_channel->sid >> 8;
+
+        // Result = Ok
+        signal_out.data[4] = 0x00;
+        signal_out.data[5] = 0x00;
+    }
+
+    // Send response
+    int ret = l2cap_send_channel(signal_channel, &signal_out, 12);
+    if(ret < 0) {
+        L2CAP_LOG_ERROR("Failed to send reply to configuration request on device %04X", ((l2cap_device_t*)signal_channel->device)->handle);
+        return;
+    }
+
+    // Ok now return if this was not the open channel
+    if(opened_channel == NULL)
+        return;
+
+    // All open
+    opened_channel->did = sid;
+    l2cap_set_channel_status_flags(opened_channel, opened_channel->status_flags | L2CAP_CHANNEL_STATUS_OPEN, 0);
+
+    // Send configuration request
+    signal_out.code = L2CAP_SIGNAL_CODE_CONFIGURE_REQUEST;
+    signal_out.length = 4;
+
+    // Destination + Flags
+    signal_out.data[0] = opened_channel->did & 0xFF;
+    signal_out.data[1] = opened_channel->did >> 8;
+    signal_out.data[2] = 0x00; signal_out.data[3] = 0x00; // Flags
+
+    ret = l2cap_send_signal(signal_channel, &signal_out);
+    if(ret < 0) {
+        L2CAP_LOG_ERROR("Failed to send configuration request: %d", ret);
+        l2cap_set_channel_status_flags(opened_channel, opened_channel->status_flags | L2CAP_CHANNEL_STATUS_ERROR, 0);
+    }
+}
+
+static void l2cap_on_connection_response_signal(l2cap_channel_t* signal_channel, const l2cap_signal_t* signal) {
+    if(signal->length < 8) {
+        L2CAP_LOG_ERROR("Connection Response Too Small. %d Bytes", signal->length);
+        return;
+    }
+
+    // Get the status
+    uint16_t status = (uint16_t)signal->data[4] | ((uint16_t)signal->data[5] << 8);
+
+    // Pending status is fine, just wait
+    if(status == 0x00001) {
+        return;
+    }
+
+    // Get channel, the one this signal is for
+    uint16_t sid = ((uint16_t)signal->data[2]) | ((uint16_t)signal->data[3] << 8);
+    l2cap_channel_t* opened_channel = l2cap_find_channel_by_sid((const l2cap_device_t*)signal_channel->device, sid);
+
+    if(opened_channel == NULL) {
+        L2CAP_LOG_ERROR("Got connection response for a channel that does not exist. SID:%04X", sid);
+        return;
+    }
+
+    // If status is non zero, thats an error
+    if(status != 0) {
+        l2cap_set_channel_status_flags(opened_channel, opened_channel->status_flags | L2CAP_CHANNEL_STATUS_ERROR, status);
+        return;
+    }
+
+    // Save the ID the channel has been assigned
+    opened_channel->did = ((uint16_t)signal->data[0]) | ((uint16_t)signal->data[1] << 8);
+
+    // Alert of change
+    l2cap_set_channel_status_flags(opened_channel, opened_channel->status_flags | L2CAP_CHANNEL_STATUS_OPEN, 0);
+}
+
+// Device has let us know about our configuration request
+static void l2cap_on_configure_response_signal(l2cap_channel_t* signal_channel, const l2cap_signal_t* signal) {
+    if(signal->length < 6) {
+        L2CAP_LOG_ERROR("Configuration Response Too Small. %d Bytes", signal->length);
+        return;
+    }
+
+    // Get the status
+    uint16_t status = (uint16_t)signal->data[4] | ((uint16_t)signal->data[5] << 8);
+
+    // Get channel, the one this signal is for
+    uint16_t sid = ((uint16_t)signal->data[0]) | ((uint16_t)signal->data[1] << 8);
+    l2cap_channel_t* opened_channel = l2cap_find_channel_by_sid((const l2cap_device_t*)signal_channel->device, sid);
+
+    if(opened_channel == NULL) {
+        L2CAP_LOG_ERROR("Got configuration response for a channel that does not exist. SID:%04X", sid);
+        return;
+    }
+
+    // If status is non zero, thats an error
+    if(status != 0) {
+        l2cap_set_channel_status_flags(opened_channel, opened_channel->status_flags | L2CAP_CHANNEL_STATUS_ERROR, status);
+        return;
+    }
+
+    // Alert of change
+    l2cap_set_channel_status_flags(opened_channel, opened_channel->status_flags | L2CAP_CHANNEL_STATUS_LOCAL_CONFIGURED, 0);
+}
+
+// Device has requested to configure us
+static void l2cap_on_configure_request_signal(l2cap_channel_t* signal_channel, const l2cap_signal_t* signal) {
+    if(signal->length < 4) {
+        L2CAP_LOG_ERROR("Configuration Request Too Small. %d Bytes", signal->length);
+        return;
+    }
+
+    uint16_t did = signal->data[0] | (signal->data[1] << 8);
+    uint16_t flags = signal->data[2] | (signal->data[3] << 8);
+
+    L2CAP_LOG_DEBUG("Got Configuration Request:");
+    L2CAP_LOG_DEBUG("  Destination CID: %04X", did);
+    L2CAP_LOG_DEBUG("  Flags:           %04X", flags);
+
+    // Get the channel being configured. Who needs to be open ofc.
+    l2cap_channel_t* configured_channel = l2cap_find_channel_by_sid((const l2cap_device_t*)signal_channel->device, did);
+    if(configured_channel == NULL) {
+        L2CAP_LOG_ERROR("Got configuration request for a channel that does not exist. did:%04X", did);
+        return;
+    }
+
+    l2cap_signal_t signal_out;
+
+    // Build response
+    signal_out.code = L2CAP_SIGNAL_CODE_CONFIGURE_RESPONSE;
+    signal_out.id = signal->id;
+    signal_out.length = htole16(10);
+
+    // Header, the provided did
+    signal_out.data[0] = configured_channel->did & 0xFF;
+    signal_out.data[1] = (configured_channel->did >> 8) & 0xFF;
+
+    // Flags
+    signal_out.data[2] = 0x00;
+    signal_out.data[3] = 0x00;
+
+    // Result: Success
+    signal_out.data[4] = 0x00;
+    signal_out.data[5] = 0x00;
+
+    // Options: echo what Wiimote sent
+    // Option 1: MTU
+    signal_out.data[6] = 0x01;       // Type: MTU
+    signal_out.data[7] = 0x02;       // Length: 2
+    signal_out.data[8] = 0xB9;       // Value LSB
+    signal_out.data[9] = 0x00;       // Value MSB
+
+    // Send response
+    int ret = l2cap_send_channel(signal_channel, &signal_out, 14);
+    if(ret < 0) {
+        L2CAP_LOG_ERROR("Failed to send reply to configuration request on device %04X", ((l2cap_device_t*)signal_channel->device)->handle);
+
+        l2cap_set_channel_status_flags(configured_channel, configured_channel->status_flags | L2CAP_CHANNEL_STATUS_ERROR, 0);
+    }
+
+    // Alert of change
+    l2cap_set_channel_status_flags(configured_channel, configured_channel->status_flags | L2CAP_CHANNEL_STATUS_REMOTE_CONFIGURED, 0);
+}
+
+// Device has request information about us
+static void l2cap_on_information_request_signal(l2cap_channel_t* signal_channel, const l2cap_signal_t* signal) {
+    if(signal->length < 2) {
+        L2CAP_LOG_ERROR("Information Request Too Small. %d Bytes", signal->length);
+        return;
+    }
+
+    uint16_t info_type = (uint16_t)signal->data[0] | ((uint16_t)signal->data[1] << 8);
+    L2CAP_LOG_DEBUG("Got Information Request: %04X", info_type);
+
+    l2cap_signal_t signal_out;
+
+    // Build response
+    signal_out.code = L2CAP_SIGNAL_CODE_INFORMATION_RESPONSE;
+    signal_out.id = signal->id;
+    signal_out.length = htole16(4);
+
+    // Info Type, copied over
+    signal_out.data[0] = signal->data[0];
+    signal_out.data[1] = signal->data[1];
+
+    // Result = success
+    signal_out.data[2] = 0;
+    signal_out.data[3] = 0;
+    
+
+    // Send response
+    int ret = l2cap_send_channel(signal_channel, &signal_out, 8);
+    if(ret < 0) {
+        L2CAP_LOG_ERROR("Failed to send reply to configuration request on device %04X", ((l2cap_device_t*)signal_channel->device)->handle);
+    }
+}
+
 // Called from the L2CAP task when we receive a signal
 static void l2cap_on_received_signal(void* channel_c, void* param) {
     l2cap_channel_t* channel = (l2cap_channel_t*) channel_c;
@@ -200,165 +457,42 @@ static void l2cap_on_received_signal(void* channel_c, void* param) {
     }
 
     signal.length = le16toh(signal.length);
-    
-    // If true the request gets passed on and not dealt with here.
-    bool pass_on_request = false;
-    bool send_error = false;
 
-    L2CAP_LOG_INFO("Processing signal %02X", signal.code);
+    //L2CAP_LOG_INFO("Processing signal %02X", signal.code);
     
+    // I just want to say I am sorry for the nesting...
     switch(signal.code) {
         case L2CAP_SIGNAL_CODE_REJECT:
-            pass_on_request = true; // Pass on rejections
+            //l2cap_on_reject_signal();
+            printf(".");
+            break;
+        case L2CAP_SIGNAL_CODE_CONNECTION_REQUEST:
+            l2cap_on_connection_request_signal(channel, &signal);
             break;
         case L2CAP_SIGNAL_CODE_CONNECTION_RESPONSE:
-            // If its pending we not pending pass it on
-            if(signal.length < 8) {
-                L2CAP_LOG_ERROR("Connection Response Too Small. %d Bytes", signal.length);
-                send_error = true;
-            } else {
-                uint16_t status = (uint16_t)signal.data[4] | ((uint16_t)signal.data[5] << 8);
-                L2CAP_LOG_DEBUG("Got Connection Status: %04X", status);
-                if(status != 0x0001) { // Not Pending
-                    pass_on_request = true;
-                } else {
-                    return;
-                }
-            }
+            l2cap_on_connection_response_signal(channel, &signal);
             break;
         case L2CAP_SIGNAL_CODE_CONFIGURE_RESPONSE:
-            if(signal.length < 6) {
-                L2CAP_LOG_ERROR("Configuration Response Too Small. %d Bytes", signal.length);
-                send_error = true;
-            } else {
-                pass_on_request = true;
-            }
+            l2cap_on_configure_response_signal(channel, &signal);
             break;
-        case L2CAP_SIGNAL_CODE_CONFIGURE_REQUEST: {
-            if (signal.length < 4) {
-                L2CAP_LOG_ERROR("Configuration Request Too Small. %d Bytes", signal.length);
-                send_error = true;
-                break;
-            }
-
-            uint16_t dest_cid = signal.data[0] | (signal.data[1] << 8);
-            uint16_t flags = signal.data[2] | (signal.data[3] << 8);
-            uint16_t mtu = 0;
-            bool has_mtu = false;
-
-            L2CAP_LOG_DEBUG("Got Configuration Request:");
-            L2CAP_LOG_DEBUG("  Destination CID: %04X", dest_cid);
-            L2CAP_LOG_DEBUG("  Flags:           %04X", flags);
-
-            // Get the channel being configured. Who needs to be open ofc.
-            l2cap_channel_t* configured_channel = l2cap_find_channel_by_sid((const l2cap_device_t*)channel->device, dest_cid);
-            if(configured_channel == NULL) {
-                send_error = true;
-                break;
-            }
-
-            /// BUGFIX: You need to use the devices assigned CID when doing this
-            /// Not ours, that it included in the message.
-            /// This took 24 hours of debugging to find
-            // configured_channel.did not dest_cid
-
-            // Build response
-            signal.code = L2CAP_SIGNAL_CODE_CONFIGURE_RESPONSE;
-
-            // Header: Destination CID
-            signal.data[0] = configured_channel->did & 0xFF;
-            signal.data[1] = (configured_channel->did >> 8) & 0xFF;
-
-            // Flags
-            signal.data[2] = 0x00;
-            signal.data[3] = 0x00;
-
-            // Result: Success
-            signal.data[4] = 0x00;
-            signal.data[5] = 0x00;
-
-            // Options: echo exactly what Wiimote sent
-            // Option 1: MTU
-            signal.data[6] = 0x01;       // Type: MTU
-            signal.data[7] = 0x02;       // Length: 2
-            signal.data[8] = 0xB9;       // Value LSB
-            signal.data[9] = 0x00;       // Value MSB
-
-            // Update signal length to include all options
-            signal.length = 10;  // 4 header + 2 result + 4 bytes options
+        case L2CAP_SIGNAL_CODE_CONFIGURE_REQUEST:
+            l2cap_on_configure_request_signal(channel, &signal);
             break;
-        }
         case L2CAP_SIGNAL_CODE_INFORMATION_RESPONSE:
-            if(signal.length < 4) {
-                L2CAP_LOG_ERROR("Information Response Too Small. %d Bytes", signal.length);
-                send_error = true;
-            } else {
-                pass_on_request = true;
-            }
+            // Unimplemented, we can just ignore ir
+            L2CAP_LOG_DEBUG("Got information response.");
             break;
         case L2CAP_SIGNAL_CODE_INFORMATION_REQUEST: {
-            if(signal.length < 2) {
-                L2CAP_LOG_ERROR("Information Request Too Small. %d Bytes", signal.length);
-                send_error = true;
-                break;
-            }
-
-            uint16_t info_type = (uint16_t)signal.data[0] | ((uint16_t)signal.data[1] << 8);
-
-            L2CAP_LOG_DEBUG("Got Information Request: %04X", info_type);
-
-            // Just send a success, but no additional information
-            signal.code = L2CAP_SIGNAL_CODE_INFORMATION_RESPONSE;
-            signal.length = 4;
-
-            // Keep the first 2 bytes, the same info type
-
-            // Success result
-            signal.data[2] = 0;
-            signal.data[3] = 0;
+            l2cap_on_information_request_signal(channel, &signal);
             break;
         }
         default:
             L2CAP_LOG_ERROR("Did not handle signal %02X!", signal.code);
-
-            // Send response
-            send_error = true;
             break;
-    }
-
-    if(pass_on_request) {
-        // If this is for a task, send it there
-        if(channel->incoming_signal != NULL && channel->incoming_id == signal.id) {
-            memcpy((void*)channel->incoming_signal, &signal, sizeof(signal));
-            channel->incoming_signal = NULL;
-            
-            xSemaphoreGive(channel->signal_waiter);
-            return;
-        } else {
-            // Ok so who was this for then?
-            L2CAP_LOG_INFO("Got a supuriuse %02X signal! Incoming Signal Handle: %08X, %d !=? %d", signal.code, channel->incoming_signal, channel->incoming_id, signal.id);
-            return;
-        }
-    }
-
-    if(send_error) {
-        L2CAP_LOG_DEBUG("Sending error packet.");
-        // Send response
-        signal.code = L2CAP_SIGNAL_CODE_REJECT;
-        // Id stays the same.
-        signal.length = 2;
-        signal.data[0] = 0x00; signal.data[1] = 0x00; // Reason = Command Not Understood
-    }
-
-    int length = signal.length;
-    signal.length = htole16(signal.length);
-    ret = l2cap_send_channel(channel, &signal, 4 + length);
-    if(ret < 0) {
-        L2CAP_LOG_ERROR("Failed to send reply signal on device %04X", ((l2cap_device_t*)channel->device)->handle);
     }
 }
 
-static int l2cap_send_signal(l2cap_channel_t* channel, l2cap_signal_t* signal, uint8_t expected_response) {
+static int l2cap_send_signal(l2cap_channel_t* channel, l2cap_signal_t* signal) {
     l2cap_device_t* device = (l2cap_device_t*)channel->device;
 
     int length = signal->length;
@@ -369,38 +503,32 @@ static int l2cap_send_signal(l2cap_channel_t* channel, l2cap_signal_t* signal, u
     signal->id = expected_id;
     signal->length = htole16(signal->length);
 
-    // Set what we want to wait on
-    channel->incoming_id = expected_id;
-    channel->incoming_signal = signal;
-
     int ret;
     ret = l2cap_send_channel(channel, signal, 4 + length);
     if(ret < 0) {
         L2CAP_LOG_ERROR("Failed to send signal on device %04X", ((l2cap_device_t*)channel->device)->handle);
         return ret;
     }
-
-    // Wait for our signal
-    L2CAP_LOG_DEBUG("Waiting for signal %02X", expected_response);
-    if(xSemaphoreTake(channel->signal_waiter, L2CAP_SIGNAL_TIMEOUT / portTICK_PERIOD_MS) != pdTRUE) {
-        L2CAP_LOG_ERROR("Signal %02X on device %04X time out.", signal->code, ((l2cap_device_t*)channel->device)->handle);
-        return BLERROR_TIMEOUT;
-    }
-
-    // Oh deer did we get rejected?
-    if(signal->code == L2CAP_SIGNAL_CODE_REJECT) {
-        uint16_t reason = ((uint16_t)signal->data[0]) | ((uint16_t)signal->data[1] << 8);
-        L2CAP_LOG_ERROR("Signal rejected, reason %04X", reason);
-        return BLERROR_RUNTIME;
-    }
-
-    // Who is this signal for again?
-    if(signal->code != expected_response) {
-        L2CAP_LOG_ERROR("Got signal of unexpected response. Expected %02X, got %02X", expected_response, signal->code);
-        return BLERROR_RUNTIME;
-    }
-
     return 0;
+}
+
+static void l2cap_hci_disconnection_complete_handler(void* user_data, uint16_t handle, uint8_t reason) {
+    // Lookup the device
+    // If not found, thats ok, just means it likely already terminated its l2cap connection.
+    l2cap_device_t* device = l2cap_find_device_by_hci_handle(handle);
+    if(device == NULL) {
+        return;
+    }
+
+    L2CAP_LOG_INFO("Device %04X disconnecting. Reason: %d", handle, reason);
+
+    // First close it
+    l2cap_close_device(device);
+
+    // Alert handler
+    if(device->disconnect_handler) {
+        device->disconnect_handler(device->disconnect_handler_data, reason);
+    }
 }
 
 
@@ -411,6 +539,7 @@ int l2cap_initialize() {
     memset(&l2cap_state, 0, sizeof(l2cap_state));
 
     l2cap_state.waiter = xSemaphoreCreateCountingStatic(5, 0, &l2cap_state.semaphore_data[0]);
+    l2cap_state.state_lock = xSemaphoreCreateMutexStatic(&l2cap_state.semaphore_data[1]);
 
     // Create the wiimote task
     l2cap_state.task_running = true;
@@ -420,6 +549,8 @@ int l2cap_initialize() {
         return BLERROR_FREERTOS;
     }
 
+    // We will handle device disconnect
+    hci_set_disconnection_complete_handler(l2cap_hci_disconnection_complete_handler, NULL);
 
     L2CAP_LOG_INFO("Successfully Initialized");
     return 0;
@@ -437,30 +568,39 @@ void l2cap_close() {
 
 /* -------------------L2CAP Device & Channel Management--------------------- */
 
-// Since multiple parts of L2CAP create the channel data structure
-// This is provided
-static void l2cap_initialize_channel(l2cap_device_t* device, l2cap_channel_t* channel, uint16_t sid, uint16_t did, uint8_t* buffer, int buffer_size) {
+void l2cap_initialize_channel(l2cap_device_t* device, l2cap_channel_t* channel, uint16_t sid, uint16_t did, uint16_t protocol_id, uint8_t* buffer, int buffer_size) {
     // Clear to zeros to be safe
     memset(channel, 0, sizeof(l2cap_channel_t));
 
     channel->device = device;
     channel->sid = sid;
-    channel->did = did;
+    channel->did = did; // Set when connected to.
+    channel->protocol_id = protocol_id;
 
     channel->on_complete_packet = xSemaphoreCreateCountingStatic(0xFFFF, 0, &channel->semaphore_data[0]);
+    channel->on_status_change = xSemaphoreCreateCountingStatic(0xFFFF, 0, &channel->semaphore_data[1]);
+    channel->status_lock = xSemaphoreCreateMutexStatic(&channel->semaphore_data[2]);
     
     channel->buffer = buffer;
     channel->buffer_length = buffer_size;
-
-    channel->signal_waiter = xSemaphoreCreateCountingStatic(1, 0, &channel->semaphore_data[1]);
 }
 
-int l2cap_open_device(l2cap_device_t* device_handle, uint16_t hci_device_handle, const uint8_t* mac_address) {
+static void l2cap_set_channel_status_flags(l2cap_channel_t* channel, uint16_t flags, uint16_t error) {
+    xSemaphoreTake(channel->status_lock, portMAX_DELAY);
+    channel->status_flags = flags;
+    channel->status_error = error;
+    xSemaphoreGive(channel->status_lock);
+    
+    // Alert anyone waiting on updated status
+    xSemaphoreGive(channel->on_status_change);
+}
+
+int l2cap_open_device(l2cap_device_t* device_handle, uint16_t hci_device_handle, const uint8_t* mac_address, l2cap_channel_t* channels, size_t channel_count) {
     // Make sure we have not already opened this device
     if(l2cap_find_device_by_mac_address(mac_address) != NULL) {
         L2CAP_LOG_ERROR("Could not open %02X:%02X:%02X:%02X:%02X:%02X, already open.",
         mac_address[0],mac_address[1],mac_address[2],mac_address[3],mac_address[4],mac_address[5]);
-        return BLERROR_CONNECTION_ALREADY_OPEN;
+        return BLERROR_L2CAP_ALREADY_OPEN;
     }
     
     // Set data struct to zero to be fast and easy
@@ -471,37 +611,65 @@ int l2cap_open_device(l2cap_device_t* device_handle, uint16_t hci_device_handle,
     device_handle->handle = hci_device_handle;
 
     // We dont add channel 0 the traditional way, because its already open by default
-    device_handle->open_channels.array = malloc(sizeof(l2cap_channel_t*));
-    if(device_handle->open_channels.array == NULL) {
-        return BLERROR_OUT_OF_MEMORY;
+    device_handle->open_channels.array = channels;
+    device_handle->open_channels.length = channel_count;
+
+    l2cap_channel_t* sig_channel = l2cap_find_channel_by_sid(device_handle, 0x0001);
+
+    if(sig_channel == NULL) {
+        L2CAP_LOG_ERROR("Can not create device, signal channel not provided in channels passed to l2cap_open_device.");
+        return BLERROR_ARGUMENT;
     }
 
-    device_handle->open_channels.length = 1;
-    device_handle->open_channels.array[0] = &device_handle->signal_channel;
-
-    l2cap_channel_t* sig_channel = device_handle->open_channels.array[0];
-
     // Configure channel
-    l2cap_initialize_channel(device_handle, sig_channel, L2CAP_CHANNEL_SIGNALS, L2CAP_CHANNEL_SIGNALS,
-        device_handle->signal_channel_buffer, sizeof(device_handle->signal_channel_buffer));
     l2cap_set_channel_receive_event(sig_channel, l2cap_on_received_signal, NULL);
 
     // Add this to currently open channels
     l2cap_push_device_list(device_handle);
 
+    // Handle any floating packets
+    LOCK();
+    if(l2cap_state.floating_packet_available && l2cap_state.floating_packet_handle == hci_device_handle) {
+        UNLOCK();
+        l2cap_task_buffer_in(&l2cap_state.floating_packet);
+        LOCK();
+        l2cap_state.floating_packet_available = false;
+    }
+    UNLOCK();
+
     return 0;
 }
 
 void l2cap_close_device(l2cap_device_t* device_handle) {
+    // Remove device from listing
+    l2cap_remove_device_list(device_handle);
+}
 
+void l2cap_set_disconnect_handler(l2cap_device_t* device_handle, l2cap_disconnect_handler_t handler, void* user_data) {
+    // Lock the device while setting it
+    xSemaphoreTake(device_handle->lock, portMAX_DELAY);
+    device_handle->disconnect_handler = handler;
+    device_handle->disconnect_handler_data = user_data;
+    xSemaphoreGive(device_handle->lock);
 }
 
 // Request to configure a channel
 // But this must be sent for wiimotes to actually send reports.
 static int l2cap_channel_configuration_request(l2cap_channel_t* channel) {
     l2cap_device_t* device_handle = (l2cap_device_t*)channel->device;
-    l2cap_signal_t sig;
 
+    // Get signal channel
+    l2cap_channel_t* signal_channel = l2cap_find_channel_by_sid(device_handle, 0x0001);
+    if(signal_channel == NULL) {
+        L2CAP_LOG_ERROR("Failed to find signal channel.");
+        return BLERROR_RUNTIME;
+    }
+
+    // Mark the channel as unconfigured if it was already
+    l2cap_set_channel_status_flags(channel, channel->status_flags & ~L2CAP_CHANNEL_STATUS_LOCAL_CONFIGURED, 0);
+
+    // Send configuration request
+    l2cap_signal_t sig;
     sig.code = L2CAP_SIGNAL_CODE_CONFIGURE_REQUEST;
     sig.length = 4;
 
@@ -510,107 +678,51 @@ static int l2cap_channel_configuration_request(l2cap_channel_t* channel) {
     sig.data[1] = channel->did >> 8;
     sig.data[2] = 0x00; sig.data[3] = 0x00; // Flags
 
-    l2cap_channel_t* signal_channel = device_handle->open_channels.array[0];
-
-    int ret = l2cap_send_signal(signal_channel, &sig, L2CAP_SIGNAL_CODE_CONFIGURE_RESPONSE);
+    int ret = l2cap_send_signal(signal_channel, &sig);
     if(ret < 0)
         return ret;
     
-    uint16_t status = (uint16_t)sig.data[4] | ((uint16_t)sig.data[5] << 8);
-
-    if(status != 0) {
+    // Wait for channel to become configured
+    uint16_t status;
+    ret = l2cap_wait_channel_status(channel, L2CAP_CHANNEL_STATUS_LOCAL_CONFIGURED, &status);
+    if(ret < 0) {
         L2CAP_LOG_ERROR("Configuration Request Rejected: %04X", status);
-        return BLERROR_RUNTIME;
+        return ret;
     }
 
     return 0;
 }
 
-static int l2cap_channel_information_request(l2cap_channel_t* channel, uint16_t info_type) {
-    l2cap_device_t* device_handle = (l2cap_device_t*)channel->device;
+int l2cap_open_channel(l2cap_device_t* device_handle, l2cap_channel_t* channel) {
     l2cap_signal_t sig;
-
-    sig.code = L2CAP_SIGNAL_CODE_INFORMATION_REQUEST;
-    sig.length = 2;
-
-    sig.data[0] = info_type & 0xFF;
-    sig.data[1] = info_type >> 8;
-
-    l2cap_channel_t* signal_channel = device_handle->open_channels.array[0];
-
-    int ret = l2cap_send_signal(signal_channel, &sig, L2CAP_SIGNAL_CODE_INFORMATION_RESPONSE);
-    if(ret < 0)
-        return ret;
-    
-    uint16_t status = (uint16_t)sig.data[2] | ((uint16_t)sig.data[3] << 8);
-
-    if(status != 0) {
-        L2CAP_LOG_ERROR("Configuration Request Rejected: %04X", status);
-        return BLERROR_RUNTIME;
-    }
-
-    return 0;
-}
-
-int l2cap_open_channel(l2cap_device_t* device_handle, l2cap_channel_t* channel, uint16_t protocol_id, uint8_t* rx_buffer, int rx_buffer_size) {
-    l2cap_signal_t sig;
-
-    uint16_t assigned_sid = l2cap_next_free_scid(device_handle);
-    ASSERT(assigned_sid); // Ya if this fails thats really weird.
-
     sig.code = L2CAP_SIGNAL_CODE_CONNECTION_REQUEST;
     sig.length = 4;
-    sig.data[0] = protocol_id & 0xFF;
-    sig.data[1] = protocol_id >> 8;
-    sig.data[2] = assigned_sid & 0xFF;
-    sig.data[3] = assigned_sid >> 8;
+    sig.data[0] = channel->protocol_id & 0xFF;
+    sig.data[1] = channel->protocol_id >> 8;
+    sig.data[2] = channel->sid & 0xFF;
+    sig.data[3] = channel->sid >> 8;
 
-    l2cap_channel_t* signal_channel = device_handle->open_channels.array[0];
+    l2cap_channel_t* signal_channel = l2cap_find_channel_by_sid(device_handle, 0x0001);
+    if(signal_channel == NULL) {
+        L2CAP_LOG_ERROR("Failed to find signal channel.");
+        return BLERROR_RUNTIME;
+    }
 
-    int ret = l2cap_send_signal(signal_channel, &sig, L2CAP_SIGNAL_CODE_CONNECTION_RESPONSE);
+    int ret = l2cap_send_signal(signal_channel, &sig);
     if(ret < 0)
         return ret;
 
-    // The response handler has already checked the size for this packet
-
-    uint16_t status = (uint16_t)sig.data[6] | ((uint16_t)sig.data[7] << 8);
-
-    // Lookup result
-    if(status > 0x0005) status = 0x0005;
-
-    int results[] = {
-        0, BLERROR_RUNTIME, BLERROR_CONNECTION_REFUSED_BAD_PSM,
-        BLERROR_CONNECTION_REFUSED_SECURITY, BLERROR_CONNECTION_REFUSED_NO_RESOURCED,
-        BLERROR_CONNECTION_REFUSED_UNKNOWN
-    };
-
-    ret = results[status];
-    if(ret < 0)
+    // Wait for channel to become open
+    uint16_t status;
+    ret = l2cap_wait_channel_status(channel, L2CAP_CHANNEL_STATUS_OPEN, &status);
+    if(ret < 0) {
+        L2CAP_LOG_ERROR("Configuration Request Rejected: %04X", status);
         return ret;
-    
-    // Grab the destination ID for this new channel
-    uint16_t assigned_did = ((uint16_t)sig.data[0]) | ((uint16_t)sig.data[1] << 8);
-
-    // Lock the device while adding channel
-    xSemaphoreTake(device_handle->lock, portMAX_DELAY);
-    
-    // Alright if we got this far. Lets make that channel
-    l2cap_initialize_channel(device_handle, channel, assigned_sid, assigned_did, rx_buffer, rx_buffer_size);
-    l2cap_push_channel(channel);
-
-    L2CAP_LOG_DEBUG("Added channed SID: %04X, DID: %04X", channel->sid, channel->did);
-
-    xSemaphoreGive(device_handle->lock);
-
-    round = 1;
+    }
 
     // You will need to configure the channel too for it to work
     ret = l2cap_channel_configuration_request(channel);
     return ret;
-}
-
-void l2cap_close_channel(l2cap_channel_t* channel) {
-
 }
 
 /* -------------------L2CAP Send & Receive Functions--------------------- */
@@ -687,8 +799,9 @@ int l2cap_receive_channel(l2cap_channel_t* channel, void* data, uint16_t size) {
 
     // Thats ok I our buffer must of overflow.
     // Error reported earlier
-    if(fifo_available == 0)
-        return 0;
+    if(fifo_available == 0){
+        xSemaphoreGive(device_handle->lock);
+    }
     
     // Ok thats weird, there should at least be a size?
     if(fifo_available < 2) {
@@ -747,6 +860,35 @@ int l2cap_receive_channel(l2cap_channel_t* channel, void* data, uint16_t size) {
 void l2cap_set_channel_receive_event(l2cap_channel_t* channel, l2cap_channel_event_t event, void* param) {
     channel->event_packet_available.data = param;
     channel->event_packet_available.event = event;
+}
+
+
+int l2cap_wait_channel_status(l2cap_channel_t* channel, uint16_t flags, uint16_t *error_code) {
+    while(true) {
+        xSemaphoreTake(channel->status_lock, portMAX_DELAY);
+
+        // Error
+        if(channel->status_flags & L2CAP_CHANNEL_STATUS_ERROR) {
+            if(error_code != NULL)
+                *error_code = channel->status_error;
+            xSemaphoreGive(channel->status_lock);
+            return BLERROR_L2CAP_SIGNAL_FAILED;
+        }
+
+        if((channel->status_flags & flags) == flags) {
+            if(error_code != NULL)
+                *error_code = channel->status_error;
+            xSemaphoreGive(channel->status_lock);
+            return 0;
+        }
+        xSemaphoreGive(channel->status_lock);
+
+        // Wait for a change
+        if(xSemaphoreTake(channel->on_status_change, L2CAP_SIGNAL_TIMEOUT / portTICK_PERIOD_MS) != pdTRUE) {
+            // Timeout
+            return BLERROR_TIMEOUT;
+        }
+    }
 }
 
 /* -------------------L2CAP Task--------------------- */
@@ -863,8 +1005,17 @@ static void l2cap_task_buffer_in(const hci_acl_packet_t* packet) {
     /// TODO: Do you really need to look this up EVERY time
     // Find out handle
     l2cap_device_t* device = l2cap_find_device_by_hci_handle(handle_in);
+    // Handle packets that come in before the handle is opened.
     if(device == NULL) {
-        L2CAP_LOG_ERROR("Got packet for handle thats not open, %04X", handle_in);
+        LOCK();
+        if(l2cap_state.floating_packet_available) {
+            L2CAP_LOG_ERROR("Got floating packet, but we already have one!");
+        }else {
+            memcpy(&l2cap_state.floating_packet, packet, sizeof(hci_acl_packet_t));
+            l2cap_state.floating_packet_handle = handle_in;
+            l2cap_state.floating_packet_available = true;
+        }
+        UNLOCK();
         return;
     }
 
@@ -909,7 +1060,7 @@ static void l2cap_task_buffer_in(const hci_acl_packet_t* packet) {
 
         // Alert thread if this was the whole packet
         if(device->reading_remaining == 0) {
-            l2cap_task_write_channel_end_of_packet(channel);
+            if(channel)l2cap_task_write_channel_end_of_packet(channel);
             channel_on_receive_event_queued = true;
         }
     } else {
@@ -920,12 +1071,12 @@ static void l2cap_task_buffer_in(const hci_acl_packet_t* packet) {
         }
 
         // Write data
-        l2cap_task_write_channel_buffer(channel, packet->data, length_in);
+        l2cap_task_write_channel_buffer(device->reading_channel, packet->data, length_in);
         l2cap_task_update_remaining(device, length_in);
 
         // Alert thread if this was the whole packet
         if(device->reading_remaining == 0) {
-            l2cap_task_write_channel_end_of_packet(channel);
+            l2cap_task_write_channel_end_of_packet(device->reading_channel);
             channel_on_receive_event_queued = true;
         }
     }

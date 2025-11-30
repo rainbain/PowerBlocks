@@ -112,9 +112,18 @@ typedef void (*hci_discovery_complete_handler)(void* user_data, uint8_t error);
  * @brief Callback for handling a connection request
  *
  * @param user_data User-defined context passed to the callback.
- * @param device    Pointer to the discovered device information.
+ * @param device    Pointer to the device information.
  */
 typedef void (*hci_connection_request_handler_t)(void* user_data, const hci_discovered_device_info_t* device);
+
+/**
+ * @brief Callback for when a device disconnects.
+ *
+ * @param user_data User-defined context passed to the callback.
+ * @param handle    Disconnection device handle.
+ */
+typedef void (*hci_disconnection_complete_handler_t)(void* user_data, uint16_t handle, uint8_t reason);
+
 
 /**
  * @brief Initializes the HCI interface
@@ -162,8 +171,29 @@ extern int hci_reset();
  * 
  * It is not recommended to write this register with page scan enabled for
  * thread safety.
+ * 
+ * @param handler Handler to call
+ * @param user_data User data to pass to handler
+ * 
+ * @return Negative if error.
  */
 extern void hci_set_connection_request_handler(hci_connection_request_handler_t handler, void* user_data);
+
+/**
+ * @brief Set callback for when a device disconnections.
+ * 
+ * Set a function to cal when a device disconnects.
+ * 
+ * This is for all devices, and you are provided the handle to know the device.
+ * 
+ * This is usually routed to L2CAP who can call the handler of the device and close out the connection.
+ * 
+ * @param handler Handler to call
+ * @param user_data User data to pass to handler
+ * 
+ * @return Negative if error.
+ */
+extern void hci_set_disconnection_complete_handler(hci_disconnection_complete_handler_t handler, void* user_data);
 
 /**
  * @brief Writes the HCI's page scan register.
@@ -271,6 +301,15 @@ extern int hci_get_remote_name(const hci_discovered_device_info_t* device, uint8
  * @return Negative if Error
  */
 extern int hci_create_connection(const hci_discovered_device_info_t* device, uint16_t* handle);
+
+/**
+ * @brief Disconnects from a device
+ * 
+ * @param handle Handle to device
+ * 
+ * @return Negative if Error
+*/
+extern int hci_disconnect(uint16_t handle);
 
 // These 2 buffers have been statically allocated so that
 // You can lower the amount of memcpys in ACL transactions

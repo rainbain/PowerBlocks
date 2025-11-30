@@ -147,6 +147,7 @@ typedef struct {
 #define HCI_EVENT_CODE_INQUIRY_RESULT               0x02
 #define HCI_EVENT_CONNECTION_COMPLETE               0x03
 #define HCI_EVENT_CONNECTION_REQUEST                0x04
+#define HCI_EVENT_DISCONNECTION_COMPLETE            0x05
 #define HCI_EVENT_CODE_REMOTE_NAME_REQUEST_COMPLETE 0x07
 #define HCI_EVENT_CODE_COMMAND_COMPLETE             0x0E
 #define HCI_EVENT_CODE_COMMAND_STATUS               0x0F
@@ -161,6 +162,7 @@ typedef struct {
 #define HCI_OPCODE_INQUIRY_START                  0x0401
 #define HCI_OPCODE_INQUIRY_CANCEL                 0x0402
 #define HCI_OPCODE_CREATE_CONNECTION              0x0405
+#define HCI_OPCODE_DISCONNECT                     0x0406
 #define HCI_OPCODE_ACCEPT_CONNECTION              0x0409
 #define HCI_OPCODE_REJECT_CONNECTION              0x040A
 #define HCI_OPCODE_REMOTE_NAME_REQUEST            0x0419
@@ -210,6 +212,10 @@ static struct {
     // Connection Request handler
     hci_connection_request_handler_t connection_request_handler;
     void* connection_request_user_data;
+
+    // Disconnection Complete Handler
+    hci_disconnection_complete_handler_t disconnection_complete_handler;
+    void* disconnection_complete_user_data;
 
     StaticSemaphore_t semaphore_data[4];
 } hci_state;
@@ -288,7 +294,7 @@ static int hci_command_wait_response() {
 // params has the parameters to the command, given there are parameters
 // And the follow up reply event's data will be stored, and the actull reply size noted.
 // NOTE: Its possible to get a reply size bigger than your buffer size, just means you lost some data
-static int hci_send_command(uint16_t opcode, const void* params, size_t param_length, uint8_t* reply_buffer, size_t reply_buffer_size, size_t* reply_size) {
+static int hci_send_command(uint16_t opcode, const void* params, size_t param_length, bool wait_reply, uint8_t* reply_buffer, size_t reply_buffer_size, size_t* reply_size) {
     // Create a request for the HCI Task
     // To fill in once it gets the command complete event
     hci_command_request request = {
@@ -342,6 +348,10 @@ static int hci_send_command(uint16_t opcode, const void* params, size_t param_le
         return BLERROR_IOS_EXCEPTION;
     }
 
+    // If they dont want a response, then were done
+    if(!wait_reply)
+        return ret;
+
     // Poll for completion and report error
     ret = hci_command_wait_response();
     if(ret < 0) {
@@ -386,7 +396,7 @@ static int hci_read_local_version_information() {
     size_t reply_size;
 
     int ret;
-    ret = hci_send_command(HCI_OPCODE_READ_LOCAL_VERSION_INFORMATION, NULL, 0, lvi_buffer, sizeof(lvi_buffer), &reply_size);
+    ret = hci_send_command(HCI_OPCODE_READ_LOCAL_VERSION_INFORMATION, NULL, 0, true, lvi_buffer, sizeof(lvi_buffer), &reply_size);
     if(ret < 0) return ret;
 
     // Make sure we have the right number in the response
@@ -424,7 +434,7 @@ static int hci_read_local_supported_features() {
     size_t reply_size;
 
     int ret;
-    ret = hci_send_command(HCI_OPCODE_READ_LOCAL_SUPPORTED_FEATURES, NULL, 0, buffer, sizeof(buffer), &reply_size);
+    ret = hci_send_command(HCI_OPCODE_READ_LOCAL_SUPPORTED_FEATURES, NULL, 0, true, buffer, sizeof(buffer), &reply_size);
     if(ret < 0) return ret;
 
     // Make sure we have the right number in the response
@@ -455,7 +465,7 @@ static int hci_read_bd_addr() {
     size_t reply_size;
 
     int ret;
-    ret = hci_send_command(HCI_OPCODE_READ_BD_ADDR, NULL, 0, bd_addr_buffer, sizeof(bd_addr_buffer), &reply_size);
+    ret = hci_send_command(HCI_OPCODE_READ_BD_ADDR, NULL, 0, true, bd_addr_buffer, sizeof(bd_addr_buffer), &reply_size);
     if(ret < 0) return ret;
 
     // Make sure we have the right number in the response
@@ -484,7 +494,7 @@ static int hci_read_buffer_sizes() {
     size_t reply_size;
 
     int ret;
-    ret = hci_send_command(HCI_OPCODE_READ_BUFFER_SIZE, NULL, 0, buffer, sizeof(buffer), &reply_size);
+    ret = hci_send_command(HCI_OPCODE_READ_BUFFER_SIZE, NULL, 0, true, buffer, sizeof(buffer), &reply_size);
     if(ret < 0) return ret;
 
     // Make sure we have the right number in the response
@@ -527,7 +537,7 @@ static int hci_set_event_mask() {
     buffer[6] = hci_state.event_mask >> (6 * 8) & 0xFF;
     buffer[7] = hci_state.event_mask >> (7 * 8) & 0xFF;
 
-    return hci_send_command(HCI_OPCODE_READ_BUFFER_SIZE, buffer, sizeof(buffer), NULL, 0, NULL);
+    return hci_send_command(HCI_OPCODE_READ_BUFFER_SIZE, buffer, sizeof(buffer), true, NULL, 0, NULL);
 }
 
 // Starts device discovery.
@@ -543,7 +553,7 @@ static int hci_start_inquiry_mode(uint32_t lap, uint8_t length, uint8_t response
     buffer[3] = length;
     buffer[4] = responses;
 
-    return hci_send_command(HCI_OPCODE_INQUIRY_START, buffer, sizeof(buffer), NULL, 0, NULL);
+    return hci_send_command(HCI_OPCODE_INQUIRY_START, buffer, sizeof(buffer), true, NULL, 0, NULL);
 }
 
 // Stops inquiry mode.
@@ -552,7 +562,7 @@ static int hci_cancel_inquiry() {
     size_t reply_size;
 
     int ret;
-    ret = hci_send_command(HCI_OPCODE_INQUIRY_CANCEL, NULL, 0, buffer, sizeof(buffer), NULL);
+    ret = hci_send_command(HCI_OPCODE_INQUIRY_CANCEL, NULL, 0, true, buffer, sizeof(buffer), NULL);
     if(ret < 0) return ret;
 
     // Make sure we have the right number in the response
@@ -571,7 +581,7 @@ static int hci_cancel_inquiry() {
 
 static int hci_reset_no_lock() {
     int ret;
-    ret = hci_send_command(HCI_OPCODE_RESET, NULL, 0, NULL, 0, NULL);
+    ret = hci_send_command(HCI_OPCODE_RESET, NULL, 0, true, NULL, 0, NULL);
     return ret;
 }
 
@@ -697,13 +707,18 @@ void hci_set_connection_request_handler(hci_connection_request_handler_t handler
     hci_state.connection_request_user_data = user_data;
 }
 
+void hci_set_disconnection_complete_handler(hci_disconnection_complete_handler_t handler, void* user_data) {
+    hci_state.disconnection_complete_handler = handler;
+    hci_state.disconnection_complete_user_data = user_data;
+}
+
 int hci_write_scan_enable(bool enable_inquiry_scan, bool enable_page_scan) {
     uint8_t mode = 0;
     if(enable_inquiry_scan) mode |= 0x01;
     if(enable_page_scan) mode |= 0x02;
 
     xSemaphoreTake(hci_state.lock, portMAX_DELAY);
-    int ret = hci_send_command(HCI_OPCODE_WRITE_SCAN_ENABLE, &mode, sizeof(mode), NULL, 0, NULL);
+    int ret = hci_send_command(HCI_OPCODE_WRITE_SCAN_ENABLE, &mode, sizeof(mode), true, NULL, 0, NULL);
     xSemaphoreGive(hci_state.lock);
 
     return ret;
@@ -715,7 +730,7 @@ int hci_reject_connection(const hci_discovered_device_info_t* info, hci_reject_r
     buffer[6] = reason;
 
     xSemaphoreTake(hci_state.lock, portMAX_DELAY);
-    int ret = hci_send_command(HCI_OPCODE_REJECT_CONNECTION, buffer, sizeof(buffer), NULL, 0, NULL);
+    int ret = hci_send_command(HCI_OPCODE_REJECT_CONNECTION, buffer, sizeof(buffer), true, NULL, 0, NULL);
     xSemaphoreGive(hci_state.lock);
 
     return ret;
@@ -731,7 +746,7 @@ int hci_accept_connection(const hci_discovered_device_info_t* info, bool role_sw
     xSemaphoreTake(hci_state.lock, portMAX_DELAY);
     hci_state.current_connection_request = connection_handle_buffer;
 
-    int ret = hci_send_command(HCI_OPCODE_ACCEPT_CONNECTION, buffer, sizeof(buffer), NULL, 0, NULL);
+    int ret = hci_send_command(HCI_OPCODE_ACCEPT_CONNECTION, buffer, sizeof(buffer), true, NULL, 0, NULL);
     if(ret < 0) {
         xSemaphoreGive(hci_state.lock);
         return ret;
@@ -816,7 +831,7 @@ int hci_get_remote_name(const hci_discovered_device_info_t* device, uint8_t* nam
     xSemaphoreTake(hci_state.lock, portMAX_DELAY);
 
     hci_state.current_name_request = name;
-    hci_send_command(HCI_OPCODE_REMOTE_NAME_REQUEST, buffer, sizeof(buffer), NULL, 0, NULL);
+    hci_send_command(HCI_OPCODE_REMOTE_NAME_REQUEST, buffer, sizeof(buffer), true, NULL, 0, NULL);
 
     // Poll for completion and report error
     int ret = hci_command_wait_response();
@@ -881,7 +896,7 @@ int hci_create_connection(const hci_discovered_device_info_t* device, uint16_t* 
     hci_state.current_connection_request = connection_handle_buffer;
 
     int ret;
-    ret = hci_send_command(HCI_OPCODE_CREATE_CONNECTION, buffer, sizeof(buffer), NULL, 0, NULL);
+    ret = hci_send_command(HCI_OPCODE_CREATE_CONNECTION, buffer, sizeof(buffer), true, NULL, 0, NULL);
     if(ret < 0) {
         xSemaphoreGive(hci_state.lock);
         return ret;
@@ -908,7 +923,43 @@ int hci_create_connection(const hci_discovered_device_info_t* device, uint16_t* 
     return 0;
 }
 
+int hci_disconnect(uint16_t handle) {
+    //0x13
+
+    uint8_t buffer[3];
+
+    // Handle
+    buffer[0] = handle & 0xFF;
+    buffer[1] = handle >> 8;
+
+    // Reason = Remote User Terminated Connection
+    buffer[2] = 0x13;
+
+    xSemaphoreTake(hci_state.lock, portMAX_DELAY);
+
+    int ret;
+    ret = hci_send_command(HCI_OPCODE_DISCONNECT, buffer, sizeof(buffer), false, NULL, 0, NULL);
+    xSemaphoreGive(hci_state.lock);
+
+    return ret;
+}
+
 /* -------------------HCI ACL/SCL--------------------- */
+
+//#define HCI_DUMP_ACL
+
+#ifdef HCI_DUMP_ACL
+static void hci_dump_acl_hex(uint8_t* data, size_t len) {
+    char line[48];
+    for(int i = 0; i < len; i += 16) {
+        char* p = line;
+        for(int j = 0; j < 16; j++) {
+            sprintf(p, "%02X ", data[i+j]);
+        }
+        HCI_LOG_DEBUG(TAG, line);
+    }
+}
+#endif
 
 int hci_send_acl(uint16_t handle, hci_acl_packet_boundary_flag_t pb, hci_acl_packet_broadcast_flag_t bc, uint16_t length) {
     hci_acl_packet_out.handle = htole16((handle & 0x0FFF) | (pb << 12) | (bc << 14));
@@ -917,6 +968,10 @@ int hci_send_acl(uint16_t handle, hci_acl_packet_boundary_flag_t pb, hci_acl_pac
     // Size not rounded down/up to 32 bytes, is that bad?
     xSemaphoreTake(hci_state.outgoing_acl_packets, portMAX_DELAY);
 
+    #ifdef HCI_DUMP_ACL
+    HCI_LOG_DEBUG(TAG, "%d BYTES OUT:", length);
+    hci_dump_acl_hex(hci_acl_packet_out.data, length);
+    #endif
     int ret;
     ret = hci_transfer(HCI_IOS_IOCTL_USB_BULK, HCI_ENDPOINT_ACL_OUT, &hci_acl_packet_out, length + 4);
 
@@ -934,6 +989,11 @@ void hci_decode_received_acl(uint16_t *handle, hci_acl_packet_boundary_flag_t *p
     *pb = (handle_in >> 12) & 3;
     *bc = (handle_in >> 14) & 3;
     *length = le16toh(acl_buffer->size);
+
+    #ifdef HCI_DUMP_ACL
+    HCI_LOG_DEBUG(TAG, "%d BYTES IN:", *length);
+    hci_dump_acl_hex(hci_acl_packet_out.data, *length);
+    #endif
 }
 
 /* -------------------HCI Task--------------------- */
@@ -1141,6 +1201,28 @@ static void hci_task_handle_connection_request(const hci_event* event) {
     }
 }
 
+static void hci_task_handle_disconnection_request(const hci_event* event) {
+    // Make sure its long enough
+    if(event->parameter_length < 4) {
+        HCI_LOG_ERROR(TAG, "Disconnection complete parameters too small.");
+        return;
+    }
+
+    // Check status
+    if(event->parameters[0] != 0) {
+        HCI_LOG_ERROR(TAG, "Disconnection request failed. Error %d", event->parameters[0]);
+        return;
+    }
+
+    uint16_t handle;
+    handle = ((uint16_t)event->parameters[1] << 0) | ((uint16_t)event->parameters[2] << 8);
+    uint8_t reason = event->parameters[3];
+
+    if(hci_state.disconnection_complete_handler) {
+        hci_state.disconnection_complete_handler(hci_state.disconnection_complete_user_data, handle, reason);
+    }
+}
+
 static void hci_task_handle_name_request_complete(const hci_event* event) {
     // Make sure it is of minimum size
     if(event->parameter_length != 255) {
@@ -1205,9 +1287,12 @@ void hci_task_handle_role_change_event(const hci_event* event) {
     }
 
     // Log it if not successful
-    if(!event->parameters[0]) {
-        const uint8_t* mac = event->parameters + 1;
+    const uint8_t* mac = event->parameters + 1;
+    if(event->parameters[0]) {
         HCI_LOG_ERROR(TAG, "Role change failure %d on device %02X:%02X:%02X:%02X:%02X:%02X",
+            event->parameters[0], mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    } else {
+        HCI_LOG_INFO(TAG, "Role change on device %02X:%02X:%02X:%02X:%02X:%02X",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     }
 }
@@ -1241,6 +1326,9 @@ static void hci_task(void* unused_1) {
                 break;
             case HCI_EVENT_CONNECTION_REQUEST:
                 hci_task_handle_connection_request(&hci_event_buffer);
+                break;
+            case HCI_EVENT_DISCONNECTION_COMPLETE:
+                hci_task_handle_disconnection_request(&hci_event_buffer);
                 break;
             case HCI_EVENT_CODE_REMOTE_NAME_REQUEST_COMPLETE:
                 hci_task_handle_name_request_complete(&hci_event_buffer);

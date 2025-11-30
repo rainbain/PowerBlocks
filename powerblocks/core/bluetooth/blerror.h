@@ -20,12 +20,8 @@
 #define BLERROR_OUT_OF_MEMORY      -7 // System ran out of memory.
 #define BLERROR_TIMEOUT            -8
 
-// Specific to opening a channel on L2CAP.
-#define BLERROR_CONNECTION_REFUSED_BAD_PSM      -9
-#define BLERROR_CONNECTION_REFUSED_SECURITY     -10
-#define BLERROR_CONNECTION_REFUSED_NO_RESOURCED -11
-#define BLERROR_CONNECTION_REFUSED_UNKNOWN      -12
-#define BLERROR_CONNECTION_ALREADY_OPEN         -13
+#define BLERROR_L2CAP_SIGNAL_FAILED      -9  // When a signal returns an error.
+#define BLERROR_L2CAP_ALREADY_OPEN       -10 // When a device or channel is already open
 
 // BLTools Specific
 #define BLERROR_DRIVER_INITIALIZE_FAIL          -13
