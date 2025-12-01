@@ -1,3 +1,13 @@
+"""
+DSP Microcode Assembler Lexer
+
+Converts text into discretized tokens for easy processing.
+
+Author: Samuel Fitzsimons (rainbain)
+File: lexer.py
+Date: 2025
+"""
+
 import re
 
 # Define what a token is
@@ -47,6 +57,10 @@ TOKEN_SPEC = [
     ("SHL",          r"<<"),
     ("SHR",          r">>"),
 
+    # Logical Bitwise
+    ("AND",          r"&&"),
+    ("OR",          r"\|\|"),
+
     # Single-char operators (order irrelevant now)
     ("LT",           r"<"),
     ("GT",           r">"),
@@ -59,17 +73,17 @@ TOKEN_SPEC = [
     ("BITOR",        r"\|"),
     ("XOR",          r"\^"),
     ("ASSIGN",       r"="),
+    ("NOT",          r"!"),
+    ("INVERT",       r"~"),
 
     # ------------------------------------
     # Punctuation
     # ------------------------------------
     ("LPAREN",       r"\("),
     ("RPAREN",       r"\)"),
-    ("LBRACE",       r"\{"),
-    ("RBRACE",       r"\}"),
     ("COMMA",        r","),
     ("COLON",        r":"),
-    ("SEMICOLON",    r";"),
+    ("QUESTION",     r"\?"),
 
     # ------------------------------------
     # Identifiers
@@ -85,7 +99,34 @@ TOKEN_SPEC = [
 # Compile the regex pattern
 MASTER_RE = re.compile("|".join(f"(?P<{name}>{pattern})" for name,pattern in TOKEN_SPEC))
 
+def strip_multiline_comments(text: str, filename: str):
+    out = []
+    i = 0
+    n = len(text)
+
+    while i < n:
+        if i + 1 < n and text[i] == '/' and text[i+1] == '*':
+            end = text.find("*/", i+2)
+            if end == -1:
+                raise SyntaxError(f"{filename}: Unterminated /* comment */")
+
+            # Preserve newlines inside the comment so line numbers remain correct
+            for c in text[i+2:end]:
+                if c == '\n':
+                    out.append('\n')
+
+            i = end + 2
+            continue
+
+        out.append(text[i])
+        i += 1
+
+    return ''.join(out)
+
+
 def lex(text: str, filename: str):
+    text = strip_multiline_comments(text, filename)
+
     tokens = []
     line_number = 1
     line_start = 0
@@ -117,25 +158,3 @@ def lex(text: str, filename: str):
             tokens.append(Token(kind, value, line_number, col, filename))
         
     return tokens
-
-# A quick helper in case you are having issues
-def dump_tokens_to_file(tokens, path):
-    with open(path, "w") as f:
-        line_number = 0
-
-        for token in tokens:
-            # If were on a new line, generate a new line
-            if token.line != line_number:
-                # Generate new line
-                if line_number > 0:
-                    f.write("\n")
-                    
-                line_number = token.line
-
-                f.write(f"{token.file}:{token.line}\t| ")
-            
-            # Show tokens with a value, otherwise no
-            if token.value:
-                f.write(f"({token.type}={token.value} col={token.col}) ")
-            else:
-                f.write(f"({token.type} col={token.col}) ")

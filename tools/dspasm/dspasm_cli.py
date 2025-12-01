@@ -1,3 +1,13 @@
+"""
+DSP Microcode Assembler Client Interface
+
+Provides a standard command line interface
+on-top of the assembler.
+
+Author: Samuel Fitzsimons (rainbain)
+File: dspasm_cli.py
+Date: 2025
+"""
 #!/usr/bin/env python3
 
 import argparse
@@ -6,13 +16,13 @@ import os
 from pathlib import Path
 
 from dspasm.preprocessor import Preprocessor
-from dspasm.lexer import dump_tokens_to_file
+from dspasm.utils import dump_tokens_to_file
 
 def main():
     parser = argparse.ArgumentParser(description="PowerBlocks SDK Audio DSP Microcode Assembler")
     parser.add_argument("input", type=Path, help="Input .s assembly source file")
     parser.add_argument("-o", "--output", type=Path, help="Output binary file", default="out.bin")
-    parser.add_argument("-t", "--tokens", type=Path, help="Dump tokens to file for debugging.")
+    parser.add_argument("-t", "--tokens", type=Path, help="Dump tokens after preprocessor to file for debugging.")
     parser.add_argument("-bt", "--backtrace", help="Enable python backtrace on errors.", action="store_true")
     
     args = parser.parse_args()
@@ -25,8 +35,14 @@ def main():
         # Recursive include
         tokens = preprocessor.recursive_include(input_source)
 
-        # Note down all macros
-        preprocessor.gather(tokens)
+        # Take on all the macros
+        tokens = preprocessor.gather(tokens)
+
+        # Do not allow circular definitions
+        preprocessor.check_circular_definitions()
+
+        # Evaluate
+        tokens = preprocessor.run(tokens)
     except Exception as e:
         # If backtrace, send this off to the top
         if args.backtrace:
