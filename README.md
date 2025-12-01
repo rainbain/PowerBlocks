@@ -17,13 +17,13 @@ Supported:
  3. Video Interface
  4. IOS Communications
  5. Core GX implementation.
+ 6. WiiMote Support
+ 7. SDIO + File System Support
 
 Work In Progress:
- 1. WiiMote Support
- 2. SDIO + File System Support
+ 1. Audio Interface
 
 Not Started Yet:
- 1. Audio Interface
  2. Feature Complete GX Implementation
  3. Disk Interface
  4. WiFi Support
