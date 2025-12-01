@@ -21,3 +21,4 @@ examples/FileSystem/build
 
 # Ignore Obsidian when editing markdown
 docs/.obsidian
+__pycache__/

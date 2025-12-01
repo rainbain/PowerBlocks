@@ -16,4 +16,4 @@ export CMAKE_GENERATOR="Ninja"
 export CMAKE_BUILD_TYPE=Release
 
 # CMake Find Package
-export CMAKE_PREFIX_PATH=$SCRIPT_DIR
+export CMAKE_PREFIX_PATH="$SCRIPT_DIR:$SCRIPT_DIR/tools/dspasm"
