@@ -63,3 +63,10 @@ This project is licensed under the **MIT License**. See the `LICENSE` file for m
 - **License**: BSD-like
 - **Path**: `third_party/fatfs/`
 - **Notes**: A BSD-style licenses, full details in `third_party/fatfs/LICENSE.txt`
+
+### 6. **Nayuki QR Code Generator**
+
+- **Source**: https://github.com/nayuki/QR-Code-generator
+- **License**: MIT
+- **Path**: `third_party/qrcodegen/`
+- **Notes**: 
