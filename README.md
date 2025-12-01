@@ -24,8 +24,8 @@ Work In Progress:
  1. Audio Interface
 
 Not Started Yet:
- 2. Feature Complete GX Implementation
- 3. Disk Interface
- 4. WiFi Support
+ 1. Feature Complete GX Implementation
+ 2. Disk Interface
+ 3. WiFi Support
 
  For a more in-depth roadmap for known missing features of supported functionality check: [Known Issues](https://rainbain.github.io/PowerBlocks-Docs/known_issues.html).
