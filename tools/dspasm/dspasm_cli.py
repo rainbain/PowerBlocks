@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 
 from dspasm.preprocessor import Preprocessor
+from dspasm.parser import Parser
 from dspasm.utils import dump_tokens_to_file
 
 def main():
@@ -28,6 +29,7 @@ def main():
     args = parser.parse_args()
 
     input_source = args.input
+    output_binary = args.output
 
     try:
         preprocessor = Preprocessor()
@@ -55,6 +57,39 @@ def main():
     # Dump them if asked
     if args.tokens:
         dump_tokens_to_file(tokens, args.tokens)
+
+    try:
+        # Generate program
+        parser = Parser()
+        program = parser.run(tokens)
+    except Exception as e:
+        # If backtrace, send this off to the top
+        if args.backtrace:
+            raise e
+
+        print(f"{os.path.basename(input_source)}: Parser Failed")
+        print(f"\t{e}")
+        sys.exit(1)
+    
+    try:
+        # Dump them if asked
+        if args.tokens:
+            dump_tokens_to_file(tokens, args.tokens)
+
+        # Create bytecode
+        bytecode = program.generate_bytecode()
+
+        # Write to file
+        with open(output_binary, "wb") as f:
+            f.write(bytecode)
+    except Exception as e:
+        # If backtrace, send this off to the top
+        if args.backtrace:
+            raise e
+
+        print(f"{os.path.basename(input_source)}: Bytecode Generation Failed")
+        print(f"\t{e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

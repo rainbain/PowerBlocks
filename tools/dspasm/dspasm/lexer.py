@@ -38,11 +38,13 @@ TOKEN_SPEC = [
     ("HEX",          r"0[xX][0-9A-Fa-f]+"),
     ("INT",          r"-?[0-9]+"),
     ("STRING",       r'"[^"\n]*"'),
+    ("CHAR",         r"'[^'\n]'"),
 
     # ------------------------------------
     # Preprocessor
     # ------------------------------------
     ("DIRECTIVE",    r"#[A-Za-z_][A-Za-z0-9_]*"),
+    ("ASMDIRECTIVE", r"\.[A-Za-z_][A-Za-z0-9_]*"),
 
     # ------------------------------------
     # Operators: longest FIRST
@@ -59,7 +61,7 @@ TOKEN_SPEC = [
 
     # Logical Bitwise
     ("AND",          r"&&"),
-    ("OR",          r"\|\|"),
+    ("OR",           r"\|\|"),
 
     # Single-char operators (order irrelevant now)
     ("LT",           r"<"),
@@ -83,18 +85,23 @@ TOKEN_SPEC = [
     ("RPAREN",       r"\)"),
     ("COMMA",        r","),
     ("COLON",        r":"),
-    ("QUESTION",     r"\?"),
+    ("QUESTION",    r"\?"),
+    ("LBRACKET",    r"\["),
+    ("RBRACKET",    r"\]"),
+    ("DOT",          r"\."),
 
     # ------------------------------------
-    # Identifiers
+    # Identifiers / Symbols
     # ------------------------------------
     ("IDENT",        r"[A-Za-z_][A-Za-z0-9_']*"),
+    ("REGISTER", r"\$[A-Za-z0-9_.]+"),
 
     # ------------------------------------
     # Fallback for bad characters
     # ------------------------------------
     ("MISMATCH",     r"."),
 ]
+
 
 # Compile the regex pattern
 MASTER_RE = re.compile("|".join(f"(?P<{name}>{pattern})" for name,pattern in TOKEN_SPEC))
@@ -123,6 +130,12 @@ def strip_multiline_comments(text: str, filename: str):
 
     return ''.join(out)
 
+def lex_char(token) -> int:
+    # token_value is like "'A'"
+    if len(token) != 3 or token[0] != "'" or token[2] != "'":
+        raise(token, f"Invalid char literal at line {token.line} column {token.col}")
+
+    return ord(token[1])
 
 def lex(text: str, filename: str):
     text = strip_multiline_comments(text, filename)
@@ -151,6 +164,8 @@ def lex(text: str, filename: str):
             tokens.append(Token("INT", int(value, 2), line_number, col, filename))
         elif kind == "INT":
             tokens.append(Token("INT", int(value), line_number, col, filename))
+        elif kind == "CHAR":
+            tokens.append(Token("INT", lex_char(value), line_number, col, filename))
         elif kind == "MISMATCH":
             raise SyntaxError(f"Illegal character \"{value!r}\" at line {line_number} column {col}")
         else:

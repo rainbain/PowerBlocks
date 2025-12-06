@@ -36,6 +36,13 @@ def dump_tokens_to_file(tokens, path):
 def assembly_error(token, error):
     raise SyntaxError(f"{error} at {token.file}:{token.line}")
 
+# Returns a name for a token for error output
+def name_token(token):
+    if token.value == None:
+        return token.type
+    
+    return token.value
+
 def evaluate_parentheses(tokens):
     output = []
 
@@ -289,3 +296,115 @@ def evaluate_expression(tokens):
         assembly_error(tokens[0], "Malformed expression")
 
     return tokens[0].value
+
+class TokenConsumer:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.current_token = 0
+    
+    def consume(self, type=None, expected=None):
+        # If end of list
+        if self.current_token >= len(self.tokens):
+            # If you expected something, thats a problem
+            if expected:
+                previous_token = self.tokens[self.current_token-1]
+                assembly_error(previous_token, f"Expected {expected}")
+            
+            return None
+
+        token = self.tokens[self.current_token]
+        self.current_token += 1
+
+        if type:
+            if type != token.type:
+                assembly_error(token, f"Expected {expected}")
+        
+        return token
+    
+    def peak(self, type=None, value=None):
+        if self.current_token >= len(self.tokens):
+            return False
+        
+        token = self.tokens[self.current_token]
+
+        passed = True
+
+        if type != None and type != token.type:
+            passed = False
+        
+        if value != None and value != token.value:
+            passed = False
+        
+        return passed
+    
+    # Returns true if the current token is after a white space
+    def after_whitespace(self):
+        if self.current_token < 2:
+            return False
+        
+        next = self.tokens[self.current_token - 1]
+        prev = self.tokens[self.current_token - 2]
+
+        return next.col != prev.col + len(prev.value)
+    
+    # Starting after the `(` gather a comma separated list of list of tokens.
+    def consume_list(self, end_value):
+        arguments = []
+
+        # If a list is inside a list, we need to know that
+        nests = 0
+
+        # Gather the arguments
+        field = []
+        while True:
+            value = self.consume(expected="expression")
+
+            # Nested?
+            if value.type == "LPAREN":
+                nests += 1
+            
+            # Unnested
+            if nests > 0:
+                field.append(value)
+
+                if value.type == end_value:
+                    nests -= 1
+                
+                continue
+
+            # End of arguments
+            if value.type == end_value:
+                # If were multiple arguments in, and yet field is empty, that means
+                # there is a rouge coma
+                if len(arguments) > 0 and len(field) == 0:
+                    assembly_error(value, "Expected expression after ','")
+                
+                if len(field) > 0:
+                    arguments.append(field)
+                
+                return arguments
+
+            # Comma is end of field
+            if value.type == "COMMA":
+                # Nothing before coma, thats weird
+                if len(field) == 0:
+                    assembly_error(value, "Expected expression before ','")
+                else:
+                    arguments.append(field)
+                    field = []
+                
+                continue
+
+            field.append(value)
+    
+    # Gathers until a line ending
+    def consume_line(self):
+        field = []
+
+        while True:
+            value = self.consume(expected="value")
+
+            if value.type == "NEWLINE":
+                return field
+
+            field.append(value)

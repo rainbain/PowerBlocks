@@ -13,7 +13,7 @@ Date: 2025
 """
 
 from .lexer import lex
-from .utils import evaluate_expression, assembly_error
+from .utils import TokenConsumer, evaluate_expression, assembly_error
 
 import os
 
@@ -70,50 +70,16 @@ class Preprocessor:
         # And prevent circular includes
         self.include_stack = []
 
-    # Sets up the state machine for processing tokens
-    def set_state_machine(self, tokens):
-        self.tokens = tokens
-        self.current_token = 0
-    
-    def consume(self, type=None, expected=None):
-        # If end of list
-        if self.current_token >= len(self.tokens):
-            # If you expected something, thats a problem
-            if expected:
-                previous_token = self.tokens[self.current_token-1]
-                assembly_error(previous_token, f"Expected {expected}")
-            
-            return None
-
-        token = self.tokens[self.current_token]
-        self.current_token += 1
-
-        if type:
-            if type != token.type:
-                assembly_error(token, f"Expected {expected}")
-        
-        return token
-    
-    # Returns true if the current token is after a white space
-    def after_whitespace(self):
-        if self.current_token < 2:
-            return False
-        
-        next = self.tokens[self.current_token - 1]
-        prev = self.tokens[self.current_token - 2]
-
-        return next.col != prev.col + len(prev.value)
-
     
     # This will go through and father all macros defined in the code
     def gather(self, tokens):
-        self.set_state_machine(tokens)
+        self.consumer = TokenConsumer(tokens)
 
         output = []
 
         # Consume until none is left
         while True:
-            token = self.consume()
+            token = self.consumer.consume()
 
             if token == None:
                 break
@@ -128,9 +94,9 @@ class Preprocessor:
                 
     
     def gather_macro(self):
-        name = self.consume("IDENT", "definition name")
+        name = self.consumer.consume("IDENT", "definition name")
 
-        value = self.consume()
+        value = self.consumer.consume()
 
         # Macro arguments
         arguments = None
@@ -138,10 +104,10 @@ class Preprocessor:
 
         # Gather arguments if the macro has no whitespace between this "value" and the actual value
         if value.type == "LPAREN" and not self.after_whitespace():
-            arguments = self.gather_list()
+            arguments = self.consumer.consume_list("RPAREN")
 
             # Grab the actual value now
-            value = self.consume()
+            value = self.consumer.consume()
         
         # If there is something in value
         if value.type != "NEWLINE":
@@ -151,75 +117,13 @@ class Preprocessor:
             
             # Collect values
             values.append(value)
-            values += self.gather_line()
+            values += self.consumer.consume_line()
 
         # Hopefully no duplicate macros
         if name.value in self.macros:
             assembly_error(name, "Redefinition of macro")
         
         self.macros[name.value] = Macro(name, arguments, values)
-
-    # Starting after the `(` gather a comma separated list of list of tokens.
-    def gather_list(self):
-        arguments = []
-
-        # If a list is inside a list, we need to know that
-        nests = 0
-
-        # Gather the arguments
-        field = []
-        while True:
-            value = self.consume(expected="expression")
-
-            # Nested?
-            if value.type == "LPAREN":
-                nests += 1
-            
-            # Unnested
-            if nests > 0:
-                field.append(value)
-
-                if value.type == "RPAREN":
-                    nests -= 1
-                
-                continue
-
-            # End of arguments
-            if value.type == "RPAREN":
-                # If were multiple arguments in, and yet field is empty, that means
-                # there is a rouge coma
-                if len(arguments) > 0 and len(field) == 0:
-                    assembly_error(value, "Expected expression after ','")
-                
-                if len(field) > 0:
-                    arguments.append(field)
-                
-                return arguments
-
-            # Comma is end of field
-            if value.type == "COMMA":
-                # Nothing before coma, thats weird
-                if len(field) == 0:
-                    assembly_error(value, "Expected expression before ','")
-                else:
-                    arguments.append(field)
-                    field = []
-                
-                continue
-
-            field.append(value)
-    
-    # Gathers until a line ending
-    def gather_line(self):
-        field = []
-
-        while True:
-            value = self.consume(expected="value")
-
-            if value.type == "NEWLINE":
-                return field
-
-            field.append(value)
     
     def check_circular_macro(self, start_name, values, visited):
         for token in values:
@@ -257,7 +161,7 @@ class Preprocessor:
     def run(self, tokens):
         output = []
 
-        self.set_state_machine(tokens)
+        self.consumer = TokenConsumer(tokens)
 
         # Conditional directives, i.e. ifdef
         condition_stack = [True]
@@ -265,7 +169,7 @@ class Preprocessor:
 
         # Consume until none is left
         while True:
-            token = self.consume()
+            token = self.consumer.consume()
 
             if token == None:
                 break
@@ -283,10 +187,10 @@ class Preprocessor:
                 inverted = token.value == "#ifndef"
                 
                 # Macro name
-                name = self.consume("IDENT", "Expected definition")
+                name = self.consumer.consume("IDENT", "Expected definition")
 
                 # Consume rest of life
-                self.gather_line()
+                self.consumer.consume_line()
 
                 condition_stack_owners.append(token)
                 if name.value in self.macros:
@@ -301,7 +205,7 @@ class Preprocessor:
                     condition_stack.append(False)
                     continue
 
-                expression = self.gather_line()
+                expression = self.consumer.consume_line()
                 if len(expression) == 0:
                     assembly_error(token, "Expected expression")
                 
@@ -337,7 +241,7 @@ class Preprocessor:
                     condition_stack[-1] = False
                     continue
 
-                expression = self.gather_line()
+                expression = self.consumer.consume_line()
                 if len(expression) == 0:
                     assembly_error(token, "Expected expression")
                 
@@ -351,7 +255,7 @@ class Preprocessor:
                     assembly_error(token, "#endif unexpected at this time")
                 
                 # Consume rest of life
-                self.gather_line()
+                self.consumer.consume_line()
                 
                 condition_stack.pop()
                 condition_stack_owners.pop()
@@ -387,9 +291,9 @@ class Preprocessor:
         # Even if empty.
         if macro.functionlike():
             # Make sure it begins with an open parentheses
-            self.consume("LPAREN", "'('")
+            self.consumer.consume("LPAREN", "'('")
 
-            arguments = self.gather_list()
+            arguments = self.consumer.consume_list("RPAREN")
         
         flattened = macro.flatten(arguments)
 
